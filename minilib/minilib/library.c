@@ -1,5 +1,8 @@
 /*Will be moved to minilib.h*/
 /*50 kHz I2C*/
+#define F_CPU 1000000
+#include <avr/io.h>
+#include <util/delay.h>
 #define PRESCALER           2 //F_CPU/(16+2(PRESCALER)*4^0)
 #define TWI_START			0
 #define TWI_RESTART         1
@@ -46,17 +49,15 @@
 #define DS3231_A1F					0x00
 #define DS3231_SIGN					0x07
 
-#define _BV(x) 1 << x
-#include <avr/io.h>
-#include <avr/stdint.h>
+#define COM 0x01
+#define DATA 0x00
 
 uint8_t ret_arr[32];
 
 /*Init I2C*/
-static uint8_t i2c_init(){
-	TWSR &= ~(_BV(TWPS0) | _BV(TWPS1)); //divider
-	TWBR = F_CPU / (16 + 2 * PRESCALER); //setting I2C frequency 
-	
+static void i2c_init(){
+	TWSR &= ~( _BV(TWPS0) | _BV(TWPS1)); //divider
+	TWBR = PRESCALER; //setting I2C frequency 
 }
 /*Select action*/
 static uint8_t i2c_action(uint8_t action){
@@ -87,15 +88,15 @@ static uint8_t i2c_action(uint8_t action){
 static int i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
 	uint8_t err = 0;
 	err += !!i2c_action(TWI_START);
-	TWBR = i2c_addr << 1; // write
+	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWBR = device_addr >> 8;
+	TWDR = device_addr >> 8;
 	err += !!i2c_action(TWI_TRANSMIT);
 	if (!(device_addr & 0x1000)){
-		TWBR = device_addr;
+		TWDR = device_addr;
 		err += !!i2c_action(TWI_TRANSMIT);
 	}
-	TWBR = data;
+	TWDR = data;
 	err += !!i2c_action(TWI_TRANSMIT);
 	err += !!i2c_action(TWI_STOP);
 	return err;
@@ -104,14 +105,14 @@ static int i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
 static int i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint8_t len){
 	uint8_t err = 0;
 	err += !!i2c_action(TWI_START);
-	TWBR = i2c_addr << 1; // write
+	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWBR = device_addr >> 8;
+	TWDR = device_addr >> 8;
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWBR = device_addr;
+	TWDR = device_addr;
 	err += !!i2c_action(TWI_TRANSMIT);
 	for (uint8_t i = 0; i < len; i++){
-		TWBR = data;
+		TWDR = *(data + i);
 		err += !!i2c_action(TWI_TRANSMIT);
 	}
 	err += !!i2c_action(TWI_STOP);
@@ -122,40 +123,40 @@ static int i2c_read_byte(uint8_t i2c_addr, uint16_t device_addr){
 	uint8_t err = 0;
 	uint8_t data = 0;
 	err += !!i2c_action(TWI_START);
-	TWBR = i2c_addr << 1; // write
+	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWBR = (device_addr & 0x7FFF) >> 8;
+	TWDR = (device_addr & 0x7FFF) >> 8;
 	err += !!i2c_action(TWI_TRANSMIT);
 	if (!(device_addr & 0x1000)){
-		TWBR = device_addr;
+		TWDR = device_addr;
 		err += !!i2c_action(TWI_TRANSMIT);	
 	}
 	err += !!i2c_action(TWI_RESTART);
-	TWBR = i2c_addr << 1 | 0x01; // read
+	TWDR = i2c_addr << 1 | 0x01; // read
 	err += !!i2c_action(TWI_RECEIVE_NACK);
-	data = TWBR;
+	data = TWDR;
 	err += !!i2c_action(TWI_STOP);
 	return data;
 }
 /*Reads block of data from I2C device*/
-static void i2c_read_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t len){
+static uint8_t i2c_read_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t len){
 	uint8_t err = 0;
 	err += !!i2c_action(TWI_START);
-	TWBR = i2c_addr << 1; // write
+	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWBR = device_addr >> 8;
+	TWDR = device_addr >> 8;
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWBR = device_addr;
+	TWDR = device_addr;
 	err += !!i2c_action(TWI_TRANSMIT);
 	err += !!i2c_action(TWI_RESTART);
-	TWBR = i2c_addr << 1 | 0x01; // read
+	TWDR = i2c_addr << 1 | 0x01; // read
 	err += !!i2c_action(TWI_RECEIVE_ACK);
 	for (uint8_t i = 0; i < len - 1; ++i){
 		err += !!i2c_action(TWI_RECEIVE_ACK);
-		ret_arr[i] = TWBR;
+		ret_arr[i] = TWDR;
 	}
 	err += !!i2c_action(TWI_RECEIVE_NACK);
-	ret_arr[len] = TWBR;
+	ret_arr[len] = TWDR;
 	err += !!i2c_action(TWI_STOP);
 	return err;
 }
@@ -270,6 +271,60 @@ static void ds3231_sqw_on(uint8_t rs){
 	temp &= 0xA0;
 	temp |= ((1 << DS3231_BBSQW) | rs);
 	ds3231_write_reg(DS3231_CONTROL, temp);
+}
+void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
+	for(uint8_t i = 0; i < 8; i++){
+		if (data & 0b10000000){
+			PORTD |= 0b01000000;
+			} else {
+			PORTD &= 0b10111111;
+		}
+		PORTD |= 0b00100000;
+		PORTD &= 0b11011111;
+		data <<= 1;
+	}
+	if (type)
+		PORTD |= 0b01000000;
+	else
+		PORTD &= 0b10111111; //Really?
+	PORTD |= 0b00100000;
+	PORTD &= 0b11011111;	
+}
+/*Display reset, looks weird*/
+static void lcd_res(){
+			PORTD|=0b10000000;
+			_delay_ms(1);
+			PORTD&=0b01111111;
+			_delay_ms(10);
+			PORTD|=0b10000000;
+			shiftout(COM, 0xAE);
+			shiftout(COM, 0xD5);
+			shiftout(COM, 0xF0);
+			shiftout(COM, 0xA8);
+			shiftout(COM, 0x3F);
+			shiftout(COM, 0xD3);
+			shiftout(COM, 0x0);
+			shiftout(COM, 0x40);
+			shiftout(COM, 0x8D);
+			shiftout(COM, 0x14);
+			shiftout(COM, 0x20);
+			shiftout(COM, 0x00);
+			shiftout(COM, 0xA1);
+			shiftout(COM, 0xC8);
+			shiftout(COM, 0xDA);
+			shiftout(COM, 0x12);
+			shiftout(COM, 0x81);
+			shiftout(COM, 0x00);
+			shiftout(COM, 0xD9);
+			shiftout(COM, 0xF1);
+			shiftout(COM, 0xDB);
+			shiftout(COM, 0x40);
+			shiftout(COM, 0xA4);
+			shiftout(COM, 0xA6);
+			for(uint16_t u=0; u<1024;u++){
+				shiftout(DATA, 0b00000000);
+			}
+			shiftout(COM, 0xAF);
 }
 
 

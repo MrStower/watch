@@ -14,40 +14,40 @@
 #define DS_ADDR  0b11010000
 
 /*DS registers*/
-#define DS3231_SECONDS				0x00	// Seconds
-#define DS3231_MINUTES				0x01	// Minutes
-#define DS3231_HOURS				0x02	// Hours
-#define DS3231_DAY					0x03	// Day of week
-#define DS3231_DATE					0x04	// Day
-#define DS3231_MONTH				0x05	// Month
-#define DS3231_YEAR					0x06	// Year
-#define DS3231_CONTROL				0x0E	// Control reg
-#define DS3231_STATUS				0x0F	// Status reg
-#define DS3231_SET_CLOCK			0x10	// Frequency correction
-#define DS3231_T_MSB				0x11	// Hbyte temperature
-#define DS3231_T_LSB				0x12	// Lbyte temperature
+#define DS3231_SECONDS		0x00	// Seconds
+#define DS3231_MINUTES		0x01	// Minutes
+#define DS3231_HOURS		0x02	// Hours
+#define DS3231_DAY			0x03	// Day of week
+#define DS3231_DATE			0x04	// Day
+#define DS3231_MONTH		0x05	// Month
+#define DS3231_YEAR			0x06	// Year
+#define DS3231_CONTROL		0x0E	// Control reg
+#define DS3231_STATUS		0x0F	// Status reg
+#define DS3231_SET_CLOCK	0x10	// Frequency correction
+#define DS3231_T_MSB		0x11	// Hbyte temperature
+#define DS3231_T_LSB		0x12	// Lbyte temperature
 
 /*Display styles*/
-#define DS3231_HOURS_12				0x40
-#define DS3231_24					0x3F
-#define DS3231_AM					0x5F
-#define DS3231_PM					0x60
-#define DS3231_GET_24				0x02
-#define DS3231_GET_PM				0x01
-#define DS3231_GET_AM				0x00
+#define DS3231_HOURS_12	0x40
+#define DS3231_24		0x3F
+#define DS3231_AM		0x5F
+#define DS3231_PM		0x60
+#define DS3231_GET_24	0x02
+#define DS3231_GET_PM	0x01
+#define DS3231_GET_AM	0x00
 
 /*Other registers*/
-#define DS3231_DY_DT				0x06
-#define DS3231_EOSC					0x07
-#define DS3231_BBSQW				0x06
-#define DS3231_CONV					0x05
-#define DS3231_INTCN				0x02
-#define DS3231_OSF					0x07
-#define DS3231_EN32KHZ				0x03
-#define DS3231_BSY					0x02
-#define DS3231_A2F					0x01
-#define DS3231_A1F					0x00
-#define DS3231_SIGN					0x07
+#define DS3231_DY_DT	0x06
+#define DS3231_EOSC		0x07
+#define DS3231_BBSQW	0x06
+#define DS3231_CONV		0x05
+#define DS3231_INTCN	0x02
+#define DS3231_OSF		0x07
+#define DS3231_EN32KHZ	0x03
+#define DS3231_BSY		0x02
+#define DS3231_A2F		0x01
+#define DS3231_A1F		0x00
+#define DS3231_SIGN		0x07
 
 #define COM 0x01
 #define DATA 0x00

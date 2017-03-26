@@ -10,22 +10,22 @@
 #define TWI_TRANSMIT        3
 #define TWI_RECEIVE_ACK     4
 #define TWI_RECEIVE_NACK    5
-#define EEP_ADDR 0b01010010
-#define DS_ADDR  0b11010000
+#define EEP_ADDR 0x52 //0b01010010
+#define DS_ADDR  0xD0 //0b11010000
 
 /*DS registers*/
-#define DS3231_SECONDS		0x00	// Seconds
-#define DS3231_MINUTES		0x01	// Minutes
-#define DS3231_HOURS		0x02	// Hours
-#define DS3231_DAY			0x03	// Day of week
-#define DS3231_DATE			0x04	// Day
-#define DS3231_MONTH		0x05	// Month
-#define DS3231_YEAR			0x06	// Year
-#define DS3231_CONTROL		0x0E	// Control reg
-#define DS3231_STATUS		0x0F	// Status reg
+#define DS3231_SECONDS	0x00	// Seconds
+#define DS3231_MINUTES	0x01	// Minutes
+#define DS3231_HOURS	0x02	// Hours
+#define DS3231_DAY	0x03	// Day of week
+#define DS3231_DATE	0x04	// Day
+#define DS3231_MONTH	0x05	// Month
+#define DS3231_YEAR	0x06	// Year
+#define DS3231_CONTROL	0x0E	// Control reg
+#define DS3231_STATUS	0x0F	// Status reg
 #define DS3231_SET_CLOCK	0x10	// Frequency correction
-#define DS3231_T_MSB		0x11	// Hbyte temperature
-#define DS3231_T_LSB		0x12	// Lbyte temperature
+#define DS3231_T_MSB	0x11	// Hbyte temperature
+#define DS3231_T_LSB	0x12	// Lbyte temperature
 
 /*Display styles*/
 #define DS3231_HOURS_12	0x40

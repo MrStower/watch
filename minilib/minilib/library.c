@@ -362,7 +362,7 @@ static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 		width += 6;
 	}
 }
-
+/*what?*/
 
 
 

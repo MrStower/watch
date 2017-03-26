@@ -3,6 +3,8 @@
 #define F_CPU 1000000
 #include <avr/io.h>
 #include <util/delay.h>
+#include <avr/eeprom.h>
+
 #define PRESCALER           2 //F_CPU/(16+2(PRESCALER)*4^0)
 #define TWI_START    0
 #define TWI_RESTART	 1
@@ -53,6 +55,7 @@
 #define DATA 0x00
 
 uint8_t ret_arr[32];
+uint8_t res_seq[] EEMEM = {0xAE, 0xD5, 0xF0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x00, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF};
 
 /*Init I2C*/
 static void i2c_init(){
@@ -273,6 +276,13 @@ static void ds3231_sqw_on(uint8_t rs){
 	ds3231_write_reg(DS3231_CONTROL, temp);
 }
 void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
+	if (type)
+	PORTD &= 0b10111111; //Really?
+	else
+	PORTD |= 0b01000000;
+	
+	PORTD |= 0b00100000;
+	PORTD &= 0b11011111;
 	for(uint8_t i = 0; i < 8; i++){
 		if (data & 0b10000000){
 			PORTD |= 0b01000000;
@@ -282,13 +292,7 @@ void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for c
 		PORTD |= 0b00100000;
 		PORTD &= 0b11011111;
 		data <<= 1;
-	}
-	if (type)
-		PORTD |= 0b01000000;
-	else
-		PORTD &= 0b10111111; //Really?
-	PORTD |= 0b00100000;
-	PORTD &= 0b11011111;	
+	}	
 }
 /*Display reset, looks weird*/
 static void lcd_res(){
@@ -297,35 +301,68 @@ static void lcd_res(){
 			PORTD&=0b01111111;
 			_delay_ms(10);
 			PORTD|=0b10000000;
-			shiftout(COM, 0xAE);
-			shiftout(COM, 0xD5);
-			shiftout(COM, 0xF0);
-			shiftout(COM, 0xA8);
-			shiftout(COM, 0x3F);
-			shiftout(COM, 0xD3);
-			shiftout(COM, 0x0);
-			shiftout(COM, 0x40);
-			shiftout(COM, 0x8D);
-			shiftout(COM, 0x14);
-			shiftout(COM, 0x20);
-			shiftout(COM, 0x00);
-			shiftout(COM, 0xA1);
-			shiftout(COM, 0xC8);
-			shiftout(COM, 0xDA);
-			shiftout(COM, 0x12);
-			shiftout(COM, 0x81);
-			shiftout(COM, 0x00);
-			shiftout(COM, 0xD9);
-			shiftout(COM, 0xF1);
-			shiftout(COM, 0xDB);
-			shiftout(COM, 0x40);
-			shiftout(COM, 0xA4);
-			shiftout(COM, 0xA6);
-			for(uint16_t u=0; u<1024;u++){
-				shiftout(DATA, 0b00000000);
+			for (uint8_t u = 0; u < sizeof(res_seq) - 1; u++){
+				shiftout(COM, eeprom_read_byte(&res_seq[u]));
 			}
-			shiftout(COM, 0xAF);
+			for(uint16_t u = 0; u < 1024; u++){
+				shiftout(DATA, 0x00);
+			}
+			shiftout(COM, eeprom_read_byte(&res_seq[sizeof(res_seq) - 2]));
 }
+/*Goes to page. 4-byte end address|4-byte start address*/
+static void goto_page(uint8_t page){
+	shiftout(COM, 0x22);
+	shiftout(COM, page & 0x0F);
+	shiftout(COM, (page >> 4) & 0x0F);
+}
+/*Goes to x-dim. 4-byte end address|4-byte start address*/
+static void goto_x(uint8_t shift){
+	shiftout(COM, 0x21);
+	shiftout(COM, shift & 0x0F);
+	shiftout(COM, (shift >> 4) & 0x0F);
+}
+/*Puts a string to lcd with small amount of parameters*/
+static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
+	/*3 param: 
+	page: 4-byte end address|4-byte start address
+	x-cord: 4-byte end address|4-byte start address
+	control: 0 for no word shift control, 1 for proper shift
+	*/
+	uint8_t width = 0;
+	uint8_t curr_page = 0x0F & *param;
+	goto_page(*(param));
+	goto_x(*(param + 1));
+	for (uint8_t w = 0; w < len; w++){
+		if(!(input[w] + 1)){
+			for(uint8_t q = 0; q < 5; q++)
+				shiftout(DATA, 0x00);
+			continue;
+			width += 5;
+		} else {
+			uint8_t sign = 0;
+			uint8_t q;
+			for (q = w; q < len; q++){
+				if (!(input[q] + 1))
+					if (q > width){
+						if (curr_page == 7){
+							sign = 1;
+						} else {
+							curr_page++;
+						}
+					}
+					break;
+				}
+			
+			}
+		i2c_read_arr(EEP_ADDR, (uint16_t) *(input + w) * 5, 5);
+		for (uint16_t r = 0; r < 5; r++){
+			shiftout(DATA, ret_arr[r]);
+		}
+		shiftout(DATA, 0x00);
+		width += 6;
+	}
+}
+
 
 
 

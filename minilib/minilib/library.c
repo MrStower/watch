@@ -4,8 +4,8 @@
 #include <avr/io.h>
 #include <util/delay.h>
 #define PRESCALER           2 //F_CPU/(16+2(PRESCALER)*4^0)
-#define TWI_START			0
-#define TWI_RESTART			1
+#define TWI_START	0
+#define TWI_RESTART	1
 #define TWI_STOP            2
 #define TWI_TRANSMIT        3
 #define TWI_RECEIVE_ACK     4

@@ -4,6 +4,9 @@
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/eeprom.h>
+#include <avr/interrupt.h>
+#include <avr/pgmspace.h>
+#include <avr/sleep.h>
 
 #define PRESCALER           2 //F_CPU/(16+2(PRESCALER)*4^0)
 #define TWI_START    0
@@ -12,8 +15,8 @@
 #define TWI_TRANSMIT        3
 #define TWI_RECEIVE_ACK     4
 #define TWI_RECEIVE_NACK    5
-#define EEP_ADDR 0x52 //0b01010010
-#define DS_ADDR  0xD0 //0b11010000
+#define EEP_ADDR 0x54 //0b01010100
+#define DS_ADDR  0x68 //0b01101000
 
 /*DS registers*/
 #define DS3231_SECONDS		0x00	// Seconds
@@ -56,7 +59,27 @@
 
 uint8_t ret_arr[32];
 uint8_t res_seq[] EEMEM = {0xAE, 0xD5, 0xF0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x00, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF};
+uint8_t font36px_shift[] EEMEM = {0, 22, 12, 21, 22, 26, 21, 21, 23, 22, 21, 6};
 
+void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
+	if (!type)
+	PORTD |= 0b01000000; //Really?
+	else
+	PORTD &= 0b10111111;
+	
+	PORTD |= 0b00100000;
+	PORTD &= 0b11011111;
+	for(uint8_t i = 0; i < 8; i++){
+		if (data & 0b10000000){
+			PORTD |= 0b01000000;
+			} else {
+			PORTD &= 0b10111111;
+		}
+		PORTD |= 0b00100000;
+		PORTD &= 0b11011111;
+		data <<= 1;
+	}
+}
 /*Init I2C*/
 static void i2c_init(){
 	TWSR &= ~( _BV(TWPS0) | _BV(TWPS1)); //divider
@@ -88,6 +111,15 @@ static uint8_t i2c_action(uint8_t action){
 	return (TWSR & 0xF8);
 }
 /*Sends byte of data to I2C device*/
+static void i2c_search(){
+	shiftout(DATA, 0xFF);
+	for (uint8_t i2c_addr = 0x54; i2c_addr < 128; i2c_addr++){
+		i2c_action(TWI_START);
+		TWDR = i2c_addr << 1; // write
+		shiftout(DATA, i2c_action(TWI_TRANSMIT));
+		i2c_action(TWI_STOP);
+	}
+}
 static int i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
 	uint8_t err = 0;
 	err += !!i2c_action(TWI_START);
@@ -95,17 +127,15 @@ static int i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
 	err += !!i2c_action(TWI_TRANSMIT);
 	TWDR = device_addr >> 8;
 	err += !!i2c_action(TWI_TRANSMIT);
-	if (!(device_addr & 0x1000)){
-		TWDR = device_addr;
-		err += !!i2c_action(TWI_TRANSMIT);
-	}
+	TWDR = device_addr;
+	err += !!i2c_action(TWI_TRANSMIT);
 	TWDR = data;
 	err += !!i2c_action(TWI_TRANSMIT);
 	err += !!i2c_action(TWI_STOP);
 	return err;
 }
 /*Sends block of data to I2C device*/
-static int i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint8_t len){
+static uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint8_t len){
 	uint8_t err = 0;
 	err += !!i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
@@ -122,20 +152,19 @@ static int i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, u
 	return err;
 }
 /*Reads byte of data from I2C device*/
-static int i2c_read_byte(uint8_t i2c_addr, uint16_t device_addr){
-	uint8_t err = 0;
+static uint8_t i2c_read_byte(uint8_t i2c_addr, uint16_t device_addr){
 	uint8_t data = 0;
+	uint8_t err = 0;
 	err += !!i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWDR = (device_addr & 0x7FFF) >> 8;
+	TWDR = device_addr >> 8;
 	err += !!i2c_action(TWI_TRANSMIT);
-	if (!(device_addr & 0x1000)){
-		TWDR = device_addr;
-		err += !!i2c_action(TWI_TRANSMIT);	
-	}
+	TWDR = device_addr;
+	err += !!i2c_action(TWI_TRANSMIT);
 	err += !!i2c_action(TWI_RESTART);
 	TWDR = i2c_addr << 1 | 0x01; // read
+	err += !!i2c_action(TWI_RECEIVE_ACK);
 	err += !!i2c_action(TWI_RECEIVE_NACK);
 	data = TWDR;
 	err += !!i2c_action(TWI_STOP);
@@ -246,12 +275,13 @@ static void ds3231_write_time(uint8_t h1224, uint8_t hours, uint8_t minutes, uin
 	}
 }
 static void ds3231_read_date(uint8_t *str){
-	uint8_t temp[3];
+	uint8_t temp[4];
 	uint8_t i = 0;
 	i2c_read_arr(DS_ADDR, (0x1000 | DS3231_DAY), 4);
 	temp[0] = ret_arr[0];
 	temp[1] = ret_arr[1];
 	temp[2] = ret_arr[2];
+	temp[3] = ret_arr[3];
 	*str = ret_arr[3];
 	str++;
 	while(i < 4)
@@ -275,25 +305,6 @@ static void ds3231_sqw_on(uint8_t rs){
 	temp |= ((1 << DS3231_BBSQW) | rs);
 	ds3231_write_reg(DS3231_CONTROL, temp);
 }
-void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
-	if (type)
-	PORTD &= 0b10111111; //Really?
-	else
-	PORTD |= 0b01000000;
-	
-	PORTD |= 0b00100000;
-	PORTD &= 0b11011111;
-	for(uint8_t i = 0; i < 8; i++){
-		if (data & 0b10000000){
-			PORTD |= 0b01000000;
-			} else {
-			PORTD &= 0b10111111;
-		}
-		PORTD |= 0b00100000;
-		PORTD &= 0b11011111;
-		data <<= 1;
-	}	
-}
 /*Display reset, looks weird*/
 static void lcd_res(){
 			PORTD|=0b10000000;
@@ -307,7 +318,7 @@ static void lcd_res(){
 			for(uint16_t u = 0; u < 1024; u++){
 				shiftout(DATA, 0x00);
 			}
-			shiftout(COM, eeprom_read_byte(&res_seq[sizeof(res_seq) - 2]));
+			shiftout(COM, eeprom_read_byte(&res_seq[sizeof(res_seq) - 1]));
 }
 /*Goes to page. 4-byte end address|4-byte start address*/
 static void goto_page(uint8_t page){
@@ -329,6 +340,7 @@ static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 	control: 0 for no word shift control, 1 for proper shift
 	*/
 	uint8_t width = 0;
+	uint8_t symbols = 0;
 	uint8_t curr_page = 0x0F & *param;
 	goto_page(*(param));
 	goto_x(*(param + 1));
@@ -336,6 +348,7 @@ static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 		if(!(input[w] + 1)){
 			for(uint8_t q = 0; q < 5; q++)
 				shiftout(DATA, 0x00);
+			symbols++;
 			continue;
 			width += 5;
 		} else {
@@ -358,11 +371,25 @@ static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 		for (uint16_t r = 0; r < 5; r++){
 			shiftout(DATA, ret_arr[r]);
 		}
+		symbols++;
 		shiftout(DATA, 0x00);
 		width += 6;
 	}
+	return symbols;
 }
-/*what?*/
+/*Displays time*/
+void display_time(){
+	//goto_page(1);
+	//goto_x(10);
+	uint8_t num = 0;
+	for (uint8_t page = 0; page < 5; page++){
+		uint16_t shift = 0;
+		for (uint8_t t = 0; t <= num; t++) shift += eeprom_read_byte(&font36px_shift[t]) * 5;
+		for (uint16_t pos = (page + 1) * 5; pos > page * 5; pos--){
+			shiftout(DATA, i2c_read_byte(EEP_ADDR, 0x0505 + shift + page * 5 - pos));
+		}
+	}
+}
 
 
 

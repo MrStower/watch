@@ -8,7 +8,7 @@
 #include <avr/pgmspace.h>
 #include <avr/sleep.h>
 
-#define PRESCALER           2 //F_CPU/(16+2(PRESCALER)*4^0)
+#define PRESCALER           0 //F_CPU/(16+2(PRESCALER)*4^0)
 #define TWI_START    0
 #define TWI_RESTART	 1
 #define TWI_STOP            2
@@ -59,7 +59,7 @@
 
 uint8_t ret_arr[32];
 uint8_t res_seq[] EEMEM = {0xAE, 0xD5, 0xF0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x00, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF};
-uint8_t font36px_shift[] EEMEM = {0, 22, 12, 21, 22, 26, 21, 21, 23, 22, 21, 6};
+uint8_t font36px_shift[] EEMEM = {0, 22, 12, 23, 22, 26, 21, 21, 23, 22, 21, 6};
 
 void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
 	if (!type)
@@ -321,16 +321,16 @@ static void lcd_res(){
 			shiftout(COM, eeprom_read_byte(&res_seq[sizeof(res_seq) - 1]));
 }
 /*Goes to page. 4-byte end address|4-byte start address*/
-static void goto_page(uint8_t page){
+static void goto_page(uint8_t page_st, uint8_t page_end){
 	shiftout(COM, 0x22);
-	shiftout(COM, page & 0x0F);
-	shiftout(COM, (page >> 4) & 0x0F);
+	shiftout(COM, page_st);
+	shiftout(COM, page_end);
 }
 /*Goes to x-dim. 4-byte end address|4-byte start address*/
-static void goto_x(uint8_t shift){
+static void goto_x(uint8_t shift_f, uint8_t shift_s){
 	shiftout(COM, 0x21);
-	shiftout(COM, shift & 0x0F);
-	shiftout(COM, (shift >> 4) & 0x0F);
+	shiftout(COM, shift_f);
+	shiftout(COM, shift_s);
 }
 /*Puts a string to lcd with small amount of parameters*/
 static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
@@ -342,8 +342,8 @@ static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 	uint8_t width = 0;
 	uint8_t symbols = 0;
 	uint8_t curr_page = 0x0F & *param;
-	goto_page(*(param));
-	goto_x(*(param + 1));
+	//goto_page(*(param));
+	//goto_x(*(param + 1));
 	for (uint8_t w = 0; w < len; w++){
 		if(!(input[w] + 1)){
 			for(uint8_t q = 0; q < 5; q++)
@@ -377,18 +377,30 @@ static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 	}
 	return symbols;
 }
-/*Displays time*/
-void display_time(){
-	//goto_page(1);
-	//goto_x(10);
-	uint8_t num = 0;
-	for (uint8_t page = 0; page < 5; page++){
-		uint16_t shift = 0;
-		for (uint8_t t = 0; t <= num; t++) shift += eeprom_read_byte(&font36px_shift[t]) * 5;
-		for (uint16_t pos = (page + 1) * 5; pos > page * 5; pos--){
-			shiftout(DATA, i2c_read_byte(EEP_ADDR, 0x0505 + shift + page * 5 - pos));
+void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
+	switch (num){
+		case 1: x_coord += 7; break;
+		case 0: case 2: case 3: case 5: case 6: case 8: case 9: x_coord += 3; break;
+	}
+	goto_x(x_coord, 127);
+	uint16_t shift = 0;
+	for (uint8_t t = 0; t <= num; t++) shift += eeprom_read_byte(&font36px_shift[t]) * 5;
+	for (uint8_t p = 0; p < 5; p++){
+		goto_page(page + p, page + p);
+		goto_x(x_coord, 127);
+		for (uint16_t pos = 0; pos < eeprom_read_byte(&font36px_shift[num + 1]); pos++){
+			shiftout(DATA, i2c_read_byte(EEP_ADDR, 0x0500 + shift + 5 * (pos + 1) - p - 1));
 		}
 	}
+}
+/*Displays time*/
+void display_time(){
+	//goto_page(1,1);
+	draw_big_digit(1, 1, 6);
+	draw_big_digit(9, 1, 34);
+	draw_big_digit(10, 1, 62);
+	draw_big_digit(8, 1, 70);
+	draw_big_digit(4, 1, 98);
 }
 
 

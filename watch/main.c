@@ -130,7 +130,7 @@ void short_press(){
 			lcd_res();
 			minutes_old=0xff;
 		}
-		time_out();
+		//time_out();
 		delay=DEL;
 		}else{
 		//sel_menu(menu_now);
@@ -176,32 +176,19 @@ int main(void)
 	DDRD=0xFF;
 	PORTD=0x00;
 	ACSR |= (1 << ACD);
-	
-	//ds3231_init();
-	//ds3231_write_reg(0x0E, 0x00);
+	i2c_init();
+	ds3231_init();
+	lcd_res();
+	ds3231_write_reg(0x0E, 0x00);
 
 /*set_sleep_mode(SLEEP_MODE_IDLE);
 	TIMSK=0x01;
 	TCCR0=0x04;
 	TCNT0=0x00;
 	sei();*/
-	i2c_init();
-	lcd_res();
-	//i2c_search();
-	uint8_t arr[] = "whatyqwera";
-	/*i2c_send_arr(EEP_ADDR, 0x0200, arr, sizeof(arr));
-	for (uint8_t r = 0; r < sizeof(arr); r++){
-		shiftout(DATA, arr[r]);
-	}
-	_delay_ms(6);*/
-	/*for (uint16_t r = 0; r < 1024; r++){
-		//i2c_read_arr(EEP_ADDR, 0x0100 * 5 + r, 1);
-		shiftout(DATA, i2c_read_byte(EEP_ADDR, 0x0021 * 5 + r));
-		if(!((r + 1) % 5)) shiftout(DATA, 0x00);
-	}*/
-	shiftout(DATA, 0xAE);
-	display_time();
-	shiftout(DATA, 0xAE);
+	//ds3231_write_time(22, 35, 12);
 	while (1) {
+		ds3231_read_time(time);
+		display_time(time);
 	}
 }

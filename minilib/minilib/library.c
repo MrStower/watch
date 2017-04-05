@@ -57,7 +57,7 @@
 #define COM 0x01
 #define DATA 0x00
 
-uint8_t ret_arr[32];
+uint8_t ret_arr[196];
 uint8_t res_seq[] EEMEM = {0xAE, 0xD5, 0xF0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x00, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF};
 uint8_t font36px_shift[] EEMEM = {0, 22, 12, 23, 22, 26, 21, 21, 23, 22, 21, 6};
 
@@ -84,6 +84,18 @@ void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for c
 static void i2c_init(){
 	TWSR &= ~( _BV(TWPS0) | _BV(TWPS1)); //divider
 	TWBR = PRESCALER; //setting I2C frequency 
+}
+/*Goes to page. 4-byte end address|4-byte start address*/
+static void goto_page(uint8_t page_st, uint8_t page_end){
+	shiftout(COM, 0x22);
+	shiftout(COM, page_st);
+	shiftout(COM, page_end);
+}
+/*Goes to x-dim. 4-byte end address|4-byte start address*/
+static void goto_x(uint8_t shift_f, uint8_t shift_s){
+	shiftout(COM, 0x21);
+	shiftout(COM, shift_f);
+	shiftout(COM, shift_s);
 }
 /*Select action*/
 static uint8_t i2c_action(uint8_t action){
@@ -125,8 +137,10 @@ static int i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
 	err += !!i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWDR = device_addr >> 8;
-	err += !!i2c_action(TWI_TRANSMIT);
+	if (i2c_addr != DS_ADDR){
+		TWDR = device_addr >> 8;
+		err += !!i2c_action(TWI_TRANSMIT);
+	}
 	TWDR = device_addr;
 	err += !!i2c_action(TWI_TRANSMIT);
 	TWDR = data;
@@ -140,8 +154,10 @@ static uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *dat
 	err += !!i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWDR = device_addr >> 8;
-	err += !!i2c_action(TWI_TRANSMIT);
+	if (i2c_addr != DS_ADDR){
+		TWDR = device_addr >> 8;
+		err += !!i2c_action(TWI_TRANSMIT);
+	}
 	TWDR = device_addr;
 	err += !!i2c_action(TWI_TRANSMIT);
 	for (uint8_t i = 0; i < len; i++){
@@ -158,8 +174,10 @@ static uint8_t i2c_read_byte(uint8_t i2c_addr, uint16_t device_addr){
 	err += !!i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWDR = device_addr >> 8;
-	err += !!i2c_action(TWI_TRANSMIT);
+	if (i2c_addr != DS_ADDR){
+		TWDR = device_addr >> 8;
+		err += !!i2c_action(TWI_TRANSMIT);
+	}
 	TWDR = device_addr;
 	err += !!i2c_action(TWI_TRANSMIT);
 	err += !!i2c_action(TWI_RESTART);
@@ -176,19 +194,21 @@ static uint8_t i2c_read_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t len)
 	err += !!i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
-	TWDR = device_addr >> 8;
-	err += !!i2c_action(TWI_TRANSMIT);
+	if (i2c_addr != DS_ADDR){
+		TWDR = device_addr >> 8;
+		err += !!i2c_action(TWI_TRANSMIT);
+	}
 	TWDR = device_addr;
 	err += !!i2c_action(TWI_TRANSMIT);
 	err += !!i2c_action(TWI_RESTART);
 	TWDR = i2c_addr << 1 | 0x01; // read
 	err += !!i2c_action(TWI_RECEIVE_ACK);
-	for (uint8_t i = 0; i < len - 1; ++i){
+	for (uint8_t i = 0; i < len - 1; i++){
 		err += !!i2c_action(TWI_RECEIVE_ACK);
 		ret_arr[i] = TWDR;
 	}
 	err += !!i2c_action(TWI_RECEIVE_NACK);
-	ret_arr[len] = TWDR;
+	ret_arr[len - 1] = TWDR;
 	err += !!i2c_action(TWI_STOP);
 	return err;
 }
@@ -198,83 +218,26 @@ void ds3231_init(void){
 	i2c_send_byte(DS_ADDR, (0x1000 | DS3231_CONTROL), temp & 0x7F);
 }
 void ds3231_write_reg(uint8_t reg, uint8_t data){
-	i2c_send_byte(DS_ADDR, (0x1000 | reg), data);
+	i2c_send_byte(DS_ADDR, reg, data);
 }
 static uint8_t ds3231_read_reg(uint8_t reg){
-	uint8_t temp = 0;
-	temp = i2c_read_byte(DS_ADDR, (0x1000 | reg));
-	return temp;
+	return i2c_read_byte(DS_ADDR, reg);
 }
 /*Because of tricky data format in RTC*/
 static uint8_t ds3231_byte(uint8_t data){
-	uint8_t temp = 0;
-	
-	while(data > 9)
-	{
-		data -= 10;
-		temp++;
-	}
-	
-	return (data | (temp << 4));
+	return ((data / 10 << 4) | data % 10);
 }
-static uint8_t ds3231_read_time(uint8_t *str){
-	uint8_t temp[3];
-	uint8_t i = 0;
-	uint8_t hour = 0;
-	
-	i2c_read_arr(DS_ADDR, (0x1000 | DS3231_SECONDS), 3);
-	temp[2] = ret_arr[0];
-	temp[1] = ret_arr[1];
-	temp[0] = ret_arr[2];
-	/*Really , whats going on?*/
-	if(temp[0] & 0x40) // AM/PM
-	{
-		*str = ((temp[0] & 0x0F)+(((temp[0] >> 4) & 0x01) * 10));
-		str++;
-		hour = ((temp[0] >> 5) & 0x01);
-		i = 1;
-		while(i < 3)
-		{
-			*str = ((temp[i] & 0x0F)+((temp[i] >> 4) * 10));
-			str++;
-			i++;
-		}
-	}
-	else // 24
-	{
-		i = 0;
-		while(i < 3)
-		{
-			*str = ((temp[i] & 0x0F)+((temp[i] >> 4) * 10));
-			str++;
-			i++;
-		}
-		hour = DS3231_GET_24;
-	}
-	return hour;
+void ds3231_read_time(uint8_t *str){	
+	i2c_read_arr(DS_ADDR, DS3231_SECONDS, 3);
+	*(str + 2) = ((ret_arr[0] & 0x70) >> 4) * 10 + (ret_arr[0] & 0x0F);
+	*(str + 1) = ((ret_arr[1] & 0x70) >> 4) * 10 + (ret_arr[1] & 0x0F);
+	*str = ((ret_arr[2] & 0x30) >> 4) * 10 + (ret_arr[2] & 0x0F);
 }
-static void ds3231_write_time(uint8_t h1224, uint8_t hours, uint8_t minutes, uint8_t seconds){
-	i2c_send_byte(DS_ADDR, (0x1000 | DS3231_SECONDS), ds3231_byte(seconds));
-	i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_SECONDS + 1)), ds3231_byte(minutes));
-	if(h1224 == DS3231_24)
-	{
-		i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_SECONDS + 2)), ds3231_byte(hours) & DS3231_24);
-	}
-	else
-	{
-		if(h1224 == DS3231_AM)
-		{
-			if(hours > 12) hours -= 12;
-			i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_SECONDS + 2)), (ds3231_byte(hours) & DS3231_AM) | DS3231_HOURS_12);
-		}
-		else
-		{
-			if(hours > 12) hours -= 12;
-			i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_SECONDS + 3)), ds3231_byte(hours)| DS3231_PM);
-		}
-	}
+static void ds3231_write_time(uint8_t hours, uint8_t minutes, uint8_t seconds){
+	uint8_t temparr[] = {ds3231_byte(seconds), ds3231_byte(minutes), ds3231_byte(hours)};
+	i2c_send_arr(DS_ADDR, DS3231_SECONDS, temparr, 3);
 }
-static void ds3231_read_date(uint8_t *str){
+void ds3231_read_date(uint8_t *str){
 	uint8_t temp[4];
 	uint8_t i = 0;
 	i2c_read_arr(DS_ADDR, (0x1000 | DS3231_DAY), 4);
@@ -291,14 +254,14 @@ static void ds3231_read_date(uint8_t *str){
 		i++;
 	}
 }
-static void ds3231_write_data(uint8_t date, uint8_t day, uint8_t month, uint8_t year){
+void ds3231_write_data(uint8_t date, uint8_t day, uint8_t month, uint8_t year){
 	i2c_send_byte(DS_ADDR, (0x1000 | DS3231_DAY), ds3231_byte(date));
 	i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_DAY + 1)), ds3231_byte(day));
 	i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_DAY + 2)), ds3231_byte(month));
 	i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_DAY + 2)), ds3231_byte(year));
 }
 /*We need to stop SQW*/
-static void ds3231_sqw_on(uint8_t rs){
+void ds3231_sqw_on(uint8_t rs){
 	uint8_t temp = 0;
 	temp = ds3231_read_reg(DS3231_CONTROL);
 	temp &= 0xA0;
@@ -306,7 +269,7 @@ static void ds3231_sqw_on(uint8_t rs){
 	ds3231_write_reg(DS3231_CONTROL, temp);
 }
 /*Display reset, looks weird*/
-static void lcd_res(){
+void lcd_res(){
 			PORTD|=0b10000000;
 			_delay_ms(1);
 			PORTD&=0b01111111;
@@ -320,20 +283,8 @@ static void lcd_res(){
 			}
 			shiftout(COM, eeprom_read_byte(&res_seq[sizeof(res_seq) - 1]));
 }
-/*Goes to page. 4-byte end address|4-byte start address*/
-static void goto_page(uint8_t page_st, uint8_t page_end){
-	shiftout(COM, 0x22);
-	shiftout(COM, page_st);
-	shiftout(COM, page_end);
-}
-/*Goes to x-dim. 4-byte end address|4-byte start address*/
-static void goto_x(uint8_t shift_f, uint8_t shift_s){
-	shiftout(COM, 0x21);
-	shiftout(COM, shift_f);
-	shiftout(COM, shift_s);
-}
 /*Puts a string to lcd with small amount of parameters*/
-static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
+uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 	/*3 param: 
 	page: 4-byte end address|4-byte start address
 	x-cord: 4-byte end address|4-byte start address
@@ -377,30 +328,48 @@ static uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 	}
 	return symbols;
 }
+void fill_column(uint8_t x_coord, uint8_t width) {
+	goto_x(x_coord, x_coord + width);
+	goto_page(1, 6);
+	for (uint16_t i = 0; i < width * 6; i++) shiftout(DATA, 0x00);
+}
 void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
+	uint8_t space = 0;
 	switch (num){
-		case 1: x_coord += 7; break;
-		case 0: case 2: case 3: case 5: case 6: case 8: case 9: x_coord += 3; break;
+		case 1:
+			fill_column(x_coord, 6);
+			x_coord += 7; 
+			space = 6;
+			break;
+		case 0: case 2: case 3: case 5: case 6: case 8: case 9:
+			fill_column(x_coord, 2);
+			x_coord += 3;
+			space = 2;
+			break;
+		case 10:
+			space = 0;
+			break;
 	}
 	goto_x(x_coord, 127);
 	uint16_t shift = 0;
 	for (uint8_t t = 0; t <= num; t++) shift += eeprom_read_byte(&font36px_shift[t]) * 5;
+	i2c_read_arr(EEP_ADDR, 0x0500 + shift, eeprom_read_byte(&font36px_shift[num + 1]) * 5);
 	for (uint8_t p = 0; p < 5; p++){
 		goto_page(page + p, page + p);
 		goto_x(x_coord, 127);
-		for (uint16_t pos = 0; pos < eeprom_read_byte(&font36px_shift[num + 1]); pos++){
-			shiftout(DATA, i2c_read_byte(EEP_ADDR, 0x0500 + shift + 5 * (pos + 1) - p - 1));
+		for (uint16_t pos = 1; pos <= eeprom_read_byte(&font36px_shift[num + 1]); pos++){
+			shiftout(DATA,  ret_arr[5 * pos - 1 - p]);
 		}
 	}
+	if (num != 10) fill_column(x_coord + eeprom_read_byte(&font36px_shift[num + 1]), 26- space - eeprom_read_byte(&font36px_shift[num + 1]));
 }
 /*Displays time*/
-void display_time(){
-	//goto_page(1,1);
-	draw_big_digit(1, 1, 6);
-	draw_big_digit(9, 1, 34);
+void display_time(uint8_t *time){
+	draw_big_digit(time[0] / 10, 1, 6);
+	draw_big_digit(time[0] % 10, 1, 34);
 	draw_big_digit(10, 1, 62);
-	draw_big_digit(8, 1, 70);
-	draw_big_digit(4, 1, 98);
+	draw_big_digit(time[1] / 10, 1, 70);
+	draw_big_digit(time[1] % 10, 1, 98);
 }
 
 

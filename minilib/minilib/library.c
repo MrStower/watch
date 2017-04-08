@@ -303,13 +303,11 @@ uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 			continue;
 			width += 5;
 		} else {
-			uint8_t sign = 0;
 			uint8_t q;
 			for (q = w; q < len; q++){
 				if (!(input[q] + 1))
 					if (q > width){
 						if (curr_page == 7){
-							sign = 1;
 						} else {
 							curr_page++;
 						}
@@ -331,7 +329,7 @@ uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
 void fill_column(uint8_t x_coord, uint8_t width) {
 	goto_x(x_coord, x_coord + width);
 	goto_page(1, 6);
-	for (uint16_t i = 0; i < width * 6; i++) shiftout(DATA, 0x00);
+	for (uint16_t i = 0; i <= width * 6; i++) shiftout(DATA, 0x00);
 }
 void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
 	uint8_t space = 0;

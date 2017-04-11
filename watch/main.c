@@ -12,6 +12,13 @@ uint8_t bt_wait_sel_d=WAIT;
 uint8_t minutes_old=0;
 uint8_t time[3];
 uint8_t date[8];
+uint8_t UART_flag = 0;
+uint8_t UART_cond = 0;
+u_char uartBuf = 12;
+uint16_t addr = 0;
+uint8_t shift = 8;
+uint8_t UART_arr[32];
+uint8_t UART_pointer = 0;
 
 void up_long(){
 	
@@ -75,14 +82,14 @@ void ok_short(){
 	}
 }
 void ok_long(){
-	switch(menu){
+	/*switch(menu){
 		case 0:
 			menu = 1;
 			break;
 		case 1:
 			menu = 0;
 			break;
-	}
+	}*/
 }
 void ok_button(){
 	if (!(PINB & 2)){
@@ -102,8 +109,20 @@ void ok_button(){
 		}
 	}
 }
+
 ISR(TIMER0_OVF_vect){
 	sleep_disable();
+	TCCR0 = 0x00;
+	sei();
+	PORTC^=0x0F;
+	if (UART_flag){
+		UART_SendChar('O');
+		UART_SendChar('K');
+		i2c_send_arr(EEP_ADDR, addr, UART_arr, UART_pointer - 1);
+		UART_flag = 0;
+	}
+	ds3231_read_time(time);
+	display_time(time);
 	DDRD = 0xE0;
 	ok_button();
 	up_button();
@@ -115,14 +134,48 @@ ISR(TIMER0_OVF_vect){
 		if (!(state & 0x08)) shiftout(1, 0xAE);
 		DDRD = 0x00;
 	}
+	TCCR0 = 0x04;
+	//shiftout(DATA, uartBuf);
+}
+
+ISR(USART_RXC_vect){
+	sleep_disable();
+	uartBuf = UDR;
+	switch (UART_cond){
+		case 1:
+			addr += uartBuf << shift;
+			shift -= 8;
+			if (shift != 0){
+				UART_cond = 0;
+			}
+			break;
+		case 2:
+			if (uartBuf == 0x03){ // End of text transmission
+				UART_cond = 0;
+				UART_flag = 1;
+				addr = 0;
+				shift = 8;
+				UART_pointer = 0;
+			} else {
+				UART_arr[UART_pointer] = uartBuf;
+				UART_pointer++;
+			}
+			break;
+	}
+	switch (uartBuf){
+		case 0x02: UART_cond = 2; break;
+		case 0x01: UART_cond = 1; break;
+		
+	}
 }
 int main(void)
 {
-	DDRB = 0x01;
 	DDRD = 0xE0;
+	DDRC = 0x0F;
 	ACSR |= (1 << ACD);
 	i2c_init();
 	ds3231_init();
+	UART_Init();
 	lcd_res();
 	ds3231_write_reg(0x0E, 0x04); //disables BBSQW
 	ds3231_write_reg(0x0F, 0x00); //disables 32kHz output

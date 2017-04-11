@@ -5,8 +5,8 @@
 #include <util/delay.h>
 #include <avr/eeprom.h>
 #include <avr/interrupt.h>
-#include <avr/pgmspace.h>
 #include <avr/sleep.h>
+#define u_char unsigned char
 
 #define PRESCALER           0 //F_CPU/(16+2(PRESCALER)*4^0)
 #define TWI_START    0
@@ -151,6 +151,7 @@ static int i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
 /*Sends block of data to I2C device*/
 static uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint8_t len){
 	uint8_t err = 0;
+	if (i2c_addr == EEP_ADDR && device_addr < 1500) return 1;
 	err += !!i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
 	err += !!i2c_action(TWI_TRANSMIT);
@@ -260,21 +261,13 @@ void ds3231_write_data(uint8_t date, uint8_t day, uint8_t month, uint8_t year){
 	i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_DAY + 2)), ds3231_byte(month));
 	i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_DAY + 2)), ds3231_byte(year));
 }
-/*We need to stop SQW*/
-void ds3231_sqw_on(uint8_t rs){
-	uint8_t temp = 0;
-	temp = ds3231_read_reg(DS3231_CONTROL);
-	temp &= 0xA0;
-	temp |= ((1 << DS3231_BBSQW) | rs);
-	ds3231_write_reg(DS3231_CONTROL, temp);
-}
 /*Display reset, looks weird*/
 void lcd_res(){
-			PORTD|=0b10000000;
+			PORTD |= 0b10000000;
 			_delay_ms(1);
-			PORTD&=0b01111111;
+			PORTD &= 0b01111111;
 			_delay_ms(10);
-			PORTD|=0b10000000;
+			PORTD |= 0b10000000;
 			for (uint8_t u = 0; u < sizeof(res_seq) - 1; u++){
 				shiftout(COM, eeprom_read_byte(&res_seq[u]));
 			}
@@ -284,45 +277,65 @@ void lcd_res(){
 			shiftout(COM, eeprom_read_byte(&res_seq[sizeof(res_seq) - 1]));
 }
 /*Puts a string to lcd with small amount of parameters*/
-uint8_t word_out(uint8_t *param, uint8_t *input, uint8_t len){
+uint8_t strlen_q(u_char *inp){
+	uint8_t len = 0;
+	while(*(inp + len)){
+		len++;
+	}
+	return len;
+}
+uint8_t word_out(uint8_t *param, u_char *input){
 	/*3 param: 
-	page: 4-byte end address|4-byte start address
-	x-cord: 4-byte end address|4-byte start address
+	page: 4-bit end address|4-bit start address
+	x-cord: byte start address|byte end address
 	control: 0 for no word shift control, 1 for proper shift
 	*/
-	uint8_t width = 0;
 	uint8_t symbols = 0;
+	uint8_t width = 0;
+	uint8_t len = strlen_q(input);
 	uint8_t curr_page = 0x0F & *param;
-	//goto_page(*(param));
-	//goto_x(*(param + 1));
-	for (uint8_t w = 0; w < len; w++){
-		if(!(input[w] + 1)){
-			for(uint8_t q = 0; q < 5; q++)
-				shiftout(DATA, 0x00);
-			symbols++;
-			continue;
-			width += 5;
-		} else {
-			uint8_t q;
-			for (q = w; q < len; q++){
-				if (!(input[q] + 1))
-					if (q > width){
-						if (curr_page == 7){
-						} else {
-							curr_page++;
+	goto_page(*(param) & 0x0F, (*(param) & 0xF0) >> 4);
+	goto_x(*(param + 1), *(param + 2));
+	for (uint8_t w = 0; input[w]; w++){
+		uint8_t q;
+		if (len * 6 > (*(param + 2) - *(param + 1)) * (((*(param) & 0xF0) >> 4) - (*(param) & 0x0F)))
+			break;
+		if (input[w] == ' ')
+			for (q = w + 1; q <= len + 1; q++){
+					if (input[q] == ' ' || !input[q]){
+						if ((uint16_t)(q - w) * 6 > *(param + 2) - *(param + 1) - width * 6){
+							if (curr_page == 7){
+								break;
+							} else {
+								width = 0;
+								curr_page++;
+								w++;
+								goto_page(curr_page, curr_page);
+								goto_x(*(param + 1), *(param + 2));
+							}
 						}
+						break;
 					}
-					break;
 				}
-			
+		else {
+			if (6 > *(param + 2) - *(param + 1) - width * 6){
+				if (curr_page == 7){
+					break;
+					} else {
+					width = 0;
+					curr_page++;
+					goto_page(curr_page, curr_page);
+					goto_x(*(param + 1), *(param + 2));
+				}
 			}
+		}
 		i2c_read_arr(EEP_ADDR, (uint16_t) *(input + w) * 5, 5);
 		for (uint16_t r = 0; r < 5; r++){
 			shiftout(DATA, ret_arr[r]);
 		}
 		symbols++;
+		width++;
 		shiftout(DATA, 0x00);
-		width += 6;
 	}
 	return symbols;
 }
@@ -369,6 +382,22 @@ void display_time(uint8_t *time){
 	draw_big_digit(time[1] / 10, 1, 70);
 	draw_big_digit(time[1] % 10, 1, 98);
 }
+/*UART init*/
+void UART_Init(void)
+{
+	UBRRH = 0;
+	UBRRL = 12; //9600 baud
+	UCSRB = (1 << RXCIE) | (1 << RXEN) | (1 << TXEN); //interrupt at recieving, tx/rx enable
+	UCSRC = (1 << URSEL) | (1 << UCSZ1) | (1 << UCSZ0); //8-bit word
+}
+void UART_SendChar(u_char sym)
+{
+	UDR = sym;
+	while(!(UCSRA & (1 << UDRE)));
+}
+
+
+
 
 
 

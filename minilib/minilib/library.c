@@ -57,11 +57,15 @@
 #define COM 0x01
 #define DATA 0x00
 
+#define MENU_DESC_START 2100
+
 uint8_t ret_arr[196];
 uint8_t res_seq[] EEMEM = {0xAE, 0xD5, 0xF0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x00, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF};
+uint8_t menu_shift[] EEMEM = {0, 5, 4, 10, 10, 6, 5};
 uint8_t font36px_shift[] EEMEM = {0, 22, 12, 23, 22, 26, 21, 21, 23, 22, 21, 6};
 
 void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
+	cli();
 	if (!type)
 	PORTD |= 0b01000000; //Really?
 	else
@@ -79,6 +83,7 @@ void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for c
 		PORTD &= 0b11011111;
 		data <<= 1;
 	}
+	sei();
 }
 /*Init I2C*/
 static void i2c_init(){
@@ -133,6 +138,7 @@ static void i2c_search(){
 	}
 }
 static int i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
+	cli();
 	uint8_t err = 0;
 	err += !!i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
@@ -147,26 +153,26 @@ static int i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
 	err += !!i2c_action(TWI_TRANSMIT);
 	err += !!i2c_action(TWI_STOP);
 	return err;
+	sei();
 }
 /*Sends block of data to I2C device*/
 static uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint8_t len){
-	uint8_t err = 0;
-	if (i2c_addr == EEP_ADDR && device_addr < 1500) return 1;
-	err += !!i2c_action(TWI_START);
+	if (i2c_addr == EEP_ADDR && device_addr < 2400) return 1;
+	i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
-	err += !!i2c_action(TWI_TRANSMIT);
+	i2c_action(TWI_TRANSMIT);
 	if (i2c_addr != DS_ADDR){
 		TWDR = device_addr >> 8;
-		err += !!i2c_action(TWI_TRANSMIT);
+		i2c_action(TWI_TRANSMIT);
 	}
 	TWDR = device_addr;
-	err += !!i2c_action(TWI_TRANSMIT);
+	i2c_action(TWI_TRANSMIT);
 	for (uint8_t i = 0; i < len; i++){
 		TWDR = *(data + i);
-		err += !!i2c_action(TWI_TRANSMIT);
+		i2c_action(TWI_TRANSMIT);
 	}
-	err += !!i2c_action(TWI_STOP);
-	return err;
+	i2c_action(TWI_STOP);
+	return 0;
 }
 /*Reads byte of data from I2C device*/
 static uint8_t i2c_read_byte(uint8_t i2c_addr, uint16_t device_addr){
@@ -381,6 +387,20 @@ void display_time(uint8_t *time){
 	draw_big_digit(10, 1, 62);
 	draw_big_digit(time[1] / 10, 1, 70);
 	draw_big_digit(time[1] % 10, 1, 98);
+}
+/*Menus in meny select mode*/
+void show_menus(){
+	uint8_t len = 0;
+	for (uint8_t i = 0; i < sizeof(menu_shift); i++){
+		len += eeprom_read_byte(&menu_shift[i]);
+	}
+	i2c_read_arr(EEP_ADDR, MENU_DESC_START, len);
+	len = 0;
+	for (uint8_t i = 1; i < sizeof(menu_shift); i++){
+		uint8_t shift = eeprom_read_byte(&menu_shift[i]);
+		uint8_t param[] = {(i - 1) << 4 | (i - 1), (127 - shift) / 2, 127, 0};
+		word_out(&param[0], ret_arr);
+	}
 }
 /*UART init*/
 void UART_Init(void)

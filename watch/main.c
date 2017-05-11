@@ -20,51 +20,56 @@ uint8_t UART_arr[32];
 uint8_t UART_pointer = 0;
 
 void up_long(){
-	
+	PORTB^=0x01;
 }
 void up_short(){
-	
+	switch(menu){
+		case 1:
+		cursor_h(1);
+		break;
+	}
 }
+uint8_t statef = 0;
 void up_button(){
-	if (!(PINB & 4)){
-		state |= 0x10;
-		if (!(state & 0x20)){
+	if (!(PIND & 8)){
+		statef |= 0x10;
+		if (!(statef & 0x20)){
 			bt_wait_sel_u = WAIT;
-			state |= 0x20;
+			statef |= 0x20;
 			} else 
 				if(bt_wait_sel_u > 0)
 					bt_wait_sel_u--;
 		} else {
-			if(state & 0x10){
-				state &= 0xEF;
+			if(statef & 0x10){
+				statef &= ~0x30;
 				if(bt_wait_sel_d > WAIT / 2)
-					up_long();
-				else
 					up_short();
 			}
 		}
 }
 void dn_long(){
-	
+	PORTB^=0x01;
 }
 void dn_short(){
-	
+	switch(menu){
+		case 1:
+		cursor_h(2);
+		break;
+	}
 }
 void dn_button(){
-		if (!(PINB & 8)){
-			state |= 0x40;
-			if (!(state & 0x80)){
+		if (!(PIND & 4)){
+			statef |= 0x40;
+			if (!(statef & 0x80)){
 				bt_wait_sel_d = WAIT;
-				state |= 0x80;
+				statef |= 0x80;
 				} else 
 					if(bt_wait_sel_d > 0)
 						bt_wait_sel_d--;
-			} else {
-			if (state & 0x40){
-				state &= 0xBF;
+		} else {
+			if (statef & 0x40){
+				statef &= ~0xD0;
 				if(bt_wait_sel_d > WAIT / 2)
-					dn_long();
-				else 
 					dn_short();
 			}
 		}
@@ -88,26 +93,28 @@ void ok_long(){
 			lcd_res();
 			goto_page(0,7);
 			goto_x(0,127);
+			show_menus();
+			cursor_h(1);
 			menu = 1;
 			break;
 		case 1:
 			menu = 0;
 			lcd_res();
-			show_menus();
 			break;
 	}
 }
-inline void ok_button(){
-	if (!(PINB & 2)){
+void ok_button(){
+	if (!(PIND & 16)){
 		state |= 0x02;
 		if (!(state & 0x01)){
 			bt_wait = WAIT;
 			state |= 0x01;
 			} else 
-				if (bt_wait > 0) bt_wait--;
+				if (bt_wait > 0)
+					bt_wait--;
 	} else {
-		if (state&0x02){
-			state&=0xFC;
+		if (state & 0x02){
+			state &= ~0x03;
 			if (bt_wait > WAIT / 2)
 				ok_short();
 			else
@@ -119,7 +126,9 @@ inline void ok_button(){
 ISR(TIMER0_OVF_vect){
 	sleep_disable();
 	TCCR0 = 0x00;
+	TCNT0++;
 	sei();
+	PORTB^=0x01;
 	if (UART_flag){
 		if(!i2c_send_arr(EEP_ADDR, addr, UART_arr, UART_pointer)){
 			UART_SendChar('O');
@@ -128,9 +137,10 @@ ISR(TIMER0_OVF_vect){
 		UART_flag = 0;
 		UART_SendChar(addr>>8);
 		UART_SendChar(addr);
-		for (uint8_t r = 0; r < 3; r++){
+		for (uint8_t r = 0; r < UART_pointer; r++){
 			UART_SendChar(i2c_read_byte(EEP_ADDR, addr + r));
 		}
+		UART_pointer = 0;
 	}
 	ds3231_read_time(time);
 	DDRD = 0xE0;
@@ -140,8 +150,7 @@ ISR(TIMER0_OVF_vect){
 	if (delay > 0 && !menu)
 		delay--;
 	else {
-		state &= 0xFB;
-		if (!(state & 0x08) && !menu){
+		if (!menu){
 			shiftout(1, 0xAE);
 			DDRD = 0x00;
 			}
@@ -181,6 +190,7 @@ int main(void)
 {
 	DDRD = 0xE0;
 	PORTD = 0x00;
+	DDRB = 0x01;
 	ACSR |= (1 << ACD);
 	i2c_init();
 	ds3231_init();

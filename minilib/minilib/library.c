@@ -56,13 +56,17 @@
 
 #define COM 0x01
 #define DATA 0x00
+#define UP 0x01
+#define DOWN 0x02
+#define NOSTEP 0x00
 
-#define MENU_DESC_START 2100
+#define MENU_DESC_START 2400
 
 uint8_t ret_arr[196];
 uint8_t res_seq[] EEMEM = {0xAE, 0xD5, 0xF0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x00, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF};
-uint8_t menu_shift[] EEMEM = {0, 5, 4, 10, 10, 6, 5};
+uint8_t menu_shift[] EEMEM = {0, 6, 5, 11, 11, 7, 6};
 uint8_t font36px_shift[] EEMEM = {0, 22, 12, 23, 22, 26, 21, 21, 23, 22, 21, 6};
+uint8_t cursor_horiz = 0;
 
 void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
 	cli();
@@ -292,7 +296,7 @@ uint8_t strlen_q(u_char *inp){
 }
 uint8_t word_out(uint8_t *param, u_char *input){
 	/*3 param: 
-	page: 4-bit end address|4-bit start address
+	page: byte end address|byte start address
 	x-cord: byte start address|byte end address
 	control: 0 for no word shift control, 1 for proper shift
 	*/
@@ -300,16 +304,16 @@ uint8_t word_out(uint8_t *param, u_char *input){
 	uint8_t width = 0;
 	uint8_t len = strlen_q(input);
 	uint8_t curr_page = 0x0F & *param;
-	goto_page(*(param) & 0x0F, (*(param) & 0xF0) >> 4);
-	goto_x(*(param + 1), *(param + 2));
+	goto_page(*(param), *(param + 1));
+	goto_x(*(param + 2), *(param + 3));
 	for (uint8_t w = 0; input[w]; w++){
 		uint8_t q;
-		if (len * 6 > (*(param + 2) - *(param + 1)) * (((*(param) & 0xF0) >> 4) - (*(param) & 0x0F)))
+		if (len * 6 > (*(param + 3) - *(param + 2)) * (*(param + 1) - *(param) + 1))
 			break;
 		if (input[w] == ' ')
 			for (q = w + 1; q <= len + 1; q++){
 					if (input[q] == ' ' || !input[q]){
-						if ((uint16_t)(q - w) * 6 > *(param + 2) - *(param + 1) - width * 6){
+						if ((uint16_t)(q - w) * 6 > *(param + 3) - *(param + 2) - width * 6){
 							if (curr_page == 7){
 								break;
 							} else {
@@ -317,26 +321,26 @@ uint8_t word_out(uint8_t *param, u_char *input){
 								curr_page++;
 								w++;
 								goto_page(curr_page, curr_page);
-								goto_x(*(param + 1), *(param + 2));
+								goto_x(*(param + 2), *(param + 3));
 							}
 						}
 						break;
 					}
 				}
 		else {
-			if (6 > *(param + 2) - *(param + 1) - width * 6){
+			if (6 > *(param + 3) - *(param + 2) - width * 6){
 				if (curr_page == 7){
 					break;
 					} else {
 					width = 0;
 					curr_page++;
 					goto_page(curr_page, curr_page);
-					goto_x(*(param + 1), *(param + 2));
+					goto_x(*(param + 2), *(param + 3));
 				}
 			}
 		}
 		i2c_read_arr(EEP_ADDR, (uint16_t) *(input + w) * 5, 5);
-		for (uint16_t r = 0; r < 5; r++){
+		for (uint8_t r = 0; r < 5; r++){
 			shiftout(DATA, ret_arr[r]);
 		}
 		symbols++;
@@ -388,18 +392,46 @@ void display_time(uint8_t *time){
 	draw_big_digit(time[1] / 10, 1, 70);
 	draw_big_digit(time[1] % 10, 1, 98);
 }
-/*Menus in meny select mode*/
+/*Rules the cursor in menu mode. 0 for just reset, 1 for up, 2 for down.*/
+void cursor_h(uint8_t upd){
+	uint8_t rem_pos = cursor_horiz;
+	switch(upd){
+		case 2:
+			if(cursor_horiz < sizeof(menu_shift) - 1)
+				cursor_horiz++;
+			else
+				cursor_horiz = 0;
+			break;
+		case 1:
+			if(cursor_horiz > 0)
+				cursor_horiz--;
+			else
+				cursor_horiz = sizeof(menu_shift) - 1;
+			break;
+	}
+	uint8_t param[] = {cursor_horiz, cursor_horiz, 0, 10, 1};
+	u_char pointer[] = ">\0";
+	word_out(param, pointer);	
+	if(upd){
+		param[0] = rem_pos;
+		param[1] = rem_pos;
+		u_char null[] = " \0";
+		word_out(param, null);
+	}
+}
+/*Menus in menu select mode*/
 void show_menus(){
 	uint8_t len = 0;
 	for (uint8_t i = 0; i < sizeof(menu_shift); i++){
 		len += eeprom_read_byte(&menu_shift[i]);
 	}
-	i2c_read_arr(EEP_ADDR, MENU_DESC_START, len);
-	len = 0;
-	for (uint8_t i = 1; i < sizeof(menu_shift); i++){
-		uint8_t shift = eeprom_read_byte(&menu_shift[i]);
-		uint8_t param[] = {(i - 1) << 4 | (i - 1), (127 - shift) / 2, 127, 0};
-		word_out(&param[0], ret_arr);
+	i2c_read_arr(EEP_ADDR, MENU_DESC_START - 5, len + 5); //first 5 byte in ret_arr are for letter. So bad cheat
+	uint8_t written = 0;
+	uint8_t str = 0;
+	while(str < sizeof(menu_shift) - 1){
+		uint8_t param[] = {str, str, (127 - eeprom_read_byte(&menu_shift[str + 1]) * 6) / 2, 127, 1};
+		written += word_out(param, &ret_arr[written + 5]) + 1;
+		str++;
 	}
 }
 /*UART init*/

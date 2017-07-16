@@ -64,9 +64,17 @@
 
 uint8_t ret_arr[196];
 uint8_t res_seq[] EEMEM = {0xAE, 0xD5, 0xF0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x00, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF};
-uint8_t menu_shift[] EEMEM = {0, 6, 5, 11, 11, 7, 6};
-uint8_t font36px_shift[] EEMEM = {0, 22, 12, 23, 22, 26, 21, 21, 23, 22, 21, 6};
+uint8_t menu_shift[] EEMEM = {0, 5, 6, 11, 7, 6};
+uint8_t font36px_shift[] EEMEM = {0, 22, 34, 57, 79, 105, 126, 147, 170, 192, 213, 219};
 uint8_t cursor_horiz = 0;
+uint8_t time[3];
+uint8_t date[4];
+u_char date_str[] = "dd/mm/yy\0";
+u_char time_str[] = "hh:mm:ss\0";
+uint8_t status = 0; //Status reg:
+/*
+0 byte -> when minutes changed. I'm using that to redraw digits on the main screen. Resets in draw_big_digit function
+*/
 
 void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
 	cli();
@@ -90,24 +98,24 @@ void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for c
 	sei();
 }
 /*Init I2C*/
-static void i2c_init(){
+void i2c_init(){
 	TWSR &= ~( _BV(TWPS0) | _BV(TWPS1)); //divider
 	TWBR = PRESCALER; //setting I2C frequency 
 }
 /*Goes to page. 4-byte end address|4-byte start address*/
-static void goto_page(uint8_t page_st, uint8_t page_end){
+void goto_page(uint8_t page_st, uint8_t page_end){
 	shiftout(COM, 0x22);
 	shiftout(COM, page_st);
 	shiftout(COM, page_end);
 }
 /*Goes to x-dim. 4-byte end address|4-byte start address*/
-static void goto_x(uint8_t shift_f, uint8_t shift_s){
+void goto_x(uint8_t shift_f, uint8_t shift_s){
 	shiftout(COM, 0x21);
 	shiftout(COM, shift_f);
 	shiftout(COM, shift_s);
 }
 /*Select action*/
-static uint8_t i2c_action(uint8_t action){
+uint8_t i2c_action(uint8_t action){
 	switch(action){
 		case TWI_START:
 		case TWI_RESTART:
@@ -129,10 +137,16 @@ static uint8_t i2c_action(uint8_t action){
 	/*Waits until transmission stops*/
 	if(action != TWI_STOP)
 		while (!(TWCR & _BV(TWINT)));
-	return (TWSR & 0xF8);
+	switch(TWSR & 0xF8){
+		case 0x20:
+		case 0x38:
+		case 0x48:
+			return 1;
+	}
+	return 0;
 }
 /*Sends byte of data to I2C device*/
-static void i2c_search(){
+void i2c_search(){
 	shiftout(DATA, 0xFF);
 	for (uint8_t i2c_addr = 0x54; i2c_addr < 128; i2c_addr++){
 		i2c_action(TWI_START);
@@ -141,26 +155,26 @@ static void i2c_search(){
 		i2c_action(TWI_STOP);
 	}
 }
-static int i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
+uint8_t i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
 	cli();
 	uint8_t err = 0;
-	err += !!i2c_action(TWI_START);
+	err += i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
-	err += !!i2c_action(TWI_TRANSMIT);
+	err += i2c_action(TWI_TRANSMIT);
 	if (i2c_addr != DS_ADDR){
 		TWDR = device_addr >> 8;
-		err += !!i2c_action(TWI_TRANSMIT);
+		err += i2c_action(TWI_TRANSMIT);
 	}
 	TWDR = device_addr;
-	err += !!i2c_action(TWI_TRANSMIT);
+	err += i2c_action(TWI_TRANSMIT);
 	TWDR = data;
-	err += !!i2c_action(TWI_TRANSMIT);
-	err += !!i2c_action(TWI_STOP);
+	err += i2c_action(TWI_TRANSMIT);
+	err += i2c_action(TWI_STOP);
 	return err;
 	sei();
 }
 /*Sends block of data to I2C device*/
-static uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint8_t len){
+uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint8_t len){
 	if (i2c_addr == EEP_ADDR && device_addr < 2400) return 1;
 	i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
@@ -179,49 +193,47 @@ static uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *dat
 	return 0;
 }
 /*Reads byte of data from I2C device*/
-static uint8_t i2c_read_byte(uint8_t i2c_addr, uint16_t device_addr){
+uint8_t i2c_read_byte(uint8_t i2c_addr, uint16_t device_addr){
 	uint8_t data = 0;
 	uint8_t err = 0;
-	err += !!i2c_action(TWI_START);
+	err += i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
-	err += !!i2c_action(TWI_TRANSMIT);
+	err += i2c_action(TWI_TRANSMIT);
 	if (i2c_addr != DS_ADDR){
 		TWDR = device_addr >> 8;
-		err += !!i2c_action(TWI_TRANSMIT);
+		err += i2c_action(TWI_TRANSMIT);
 	}
 	TWDR = device_addr;
-	err += !!i2c_action(TWI_TRANSMIT);
-	err += !!i2c_action(TWI_RESTART);
+	err += i2c_action(TWI_TRANSMIT);
+	err += i2c_action(TWI_RESTART);
 	TWDR = i2c_addr << 1 | 0x01; // read
-	err += !!i2c_action(TWI_RECEIVE_ACK);
-	err += !!i2c_action(TWI_RECEIVE_NACK);
+	err += i2c_action(TWI_RECEIVE_ACK);
+	err += i2c_action(TWI_RECEIVE_NACK);
 	data = TWDR;
-	err += !!i2c_action(TWI_STOP);
+	err += i2c_action(TWI_STOP);
 	return data;
 }
 /*Reads block of data from I2C device*/
-static uint8_t i2c_read_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t len){
-	uint8_t err = 0;
-	err += !!i2c_action(TWI_START);
+void i2c_read_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t len){
+	i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
-	err += !!i2c_action(TWI_TRANSMIT);
+	i2c_action(TWI_TRANSMIT);
 	if (i2c_addr != DS_ADDR){
 		TWDR = device_addr >> 8;
-		err += !!i2c_action(TWI_TRANSMIT);
+		i2c_action(TWI_TRANSMIT);
 	}
 	TWDR = device_addr;
-	err += !!i2c_action(TWI_TRANSMIT);
-	err += !!i2c_action(TWI_RESTART);
+	i2c_action(TWI_TRANSMIT);
+	i2c_action(TWI_RESTART);
 	TWDR = i2c_addr << 1 | 0x01; // read
-	err += !!i2c_action(TWI_RECEIVE_ACK);
+	i2c_action(TWI_RECEIVE_ACK);
 	for (uint8_t i = 0; i < len - 1; i++){
-		err += !!i2c_action(TWI_RECEIVE_ACK);
+		i2c_action(TWI_RECEIVE_ACK);
 		ret_arr[i] = TWDR;
 	}
-	err += !!i2c_action(TWI_RECEIVE_NACK);
+	i2c_action(TWI_RECEIVE_NACK);
 	ret_arr[len - 1] = TWDR;
-	err += !!i2c_action(TWI_STOP);
-	return err;
+	i2c_action(TWI_STOP);
 }
 void ds3231_init(void){
 	uint8_t temp = 0;
@@ -231,52 +243,47 @@ void ds3231_init(void){
 void ds3231_write_reg(uint8_t reg, uint8_t data){
 	i2c_send_byte(DS_ADDR, reg, data);
 }
-static uint8_t ds3231_read_reg(uint8_t reg){
+uint8_t ds3231_read_reg(uint8_t reg){
 	return i2c_read_byte(DS_ADDR, reg);
 }
 /*Because of tricky data format in RTC*/
-static uint8_t ds3231_byte(uint8_t data){
+uint8_t ds3231_byte(uint8_t data){
 	return ((data / 10 << 4) | data % 10);
 }
-void ds3231_read_time(uint8_t *str){	
+void ds3231_read_time(){	
 	i2c_read_arr(DS_ADDR, DS3231_SECONDS, 3);
-	*(str + 2) = ((ret_arr[0] & 0x70) >> 4) * 10 + (ret_arr[0] & 0x0F);
-	*(str + 1) = ((ret_arr[1] & 0x70) >> 4) * 10 + (ret_arr[1] & 0x0F);
-	*str = ((ret_arr[2] & 0x30) >> 4) * 10 + (ret_arr[2] & 0x0F);
+	*(time + 2) = ((ret_arr[0] & 0x70) >> 4) * 10 + (ret_arr[0] & 0x0F);
+	*(time + 1) = ((ret_arr[1] & 0x70) >> 4) * 10 + (ret_arr[1] & 0x0F);
+	*time = ((ret_arr[2] & 0x30) >> 4) * 10 + (ret_arr[2] & 0x0F);
 }
-static void ds3231_write_time(uint8_t hours, uint8_t minutes, uint8_t seconds){
+void ds3231_write_time(uint8_t hours, uint8_t minutes, uint8_t seconds){
 	uint8_t temparr[] = {ds3231_byte(seconds), ds3231_byte(minutes), ds3231_byte(hours)};
 	i2c_send_arr(DS_ADDR, DS3231_SECONDS, temparr, 3);
 }
-void ds3231_read_date(uint8_t *str){
-	uint8_t temp[4];
-	uint8_t i = 0;
+void ds3231_read_date(){
 	i2c_read_arr(DS_ADDR, (0x1000 | DS3231_DAY), 4);
-	temp[0] = ret_arr[0];
-	temp[1] = ret_arr[1];
-	temp[2] = ret_arr[2];
-	temp[3] = ret_arr[3];
-	*str = ret_arr[3];
-	str++;
-	while(i < 4)
-	{
-		*str = ((temp[i] & 0x0F)+((temp[i] >> 4) * 10));
-		str++;
-		i++;
-	}
+	date[0] = ret_arr[0];
+	date[1] = (ret_arr[1] & 0x0F) + (ret_arr[1] >> 4) * 10;
+	date[2] = ((ret_arr[2] & 0x10) >> 4) * 10 + (ret_arr[2] & 0x0F);
+	date[3] = (ret_arr[3] >> 4) * 10 + (ret_arr[3] & 0x0F);
+	date_str[0] = date[1] / 10 + '0';
+	date_str[1] = date[1] % 10 + '0';
+	date_str[3] = date[2] / 10 + '0';
+	date_str[4] = date[2] % 10 + '0';
+	date_str[6] = date[3] / 10 + '0';
+	date_str[7] = date[3] % 10 + '0';
+	date_str[8] = '\0';
 }
-void ds3231_write_data(uint8_t date, uint8_t day, uint8_t month, uint8_t year){
-	i2c_send_byte(DS_ADDR, (0x1000 | DS3231_DAY), ds3231_byte(date));
-	i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_DAY + 1)), ds3231_byte(day));
-	i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_DAY + 2)), ds3231_byte(month));
-	i2c_send_byte(DS_ADDR, (0x1000 | (DS3231_DAY + 2)), ds3231_byte(year));
+void ds3231_write_date(uint8_t date, uint8_t day, uint8_t month, uint8_t year){
+	uint8_t temparr[] = {ds3231_byte(date), ds3231_byte(day), ds3231_byte(month), ds3231_byte(year)};
+	i2c_send_arr(DS_ADDR, DS3231_DAY, temparr, 4);
 }
 /*Display reset, looks weird*/
 void lcd_res(){
 			PORTD |= 0b10000000;
-			_delay_ms(1);
+			_delay_us(250);
 			PORTD &= 0b01111111;
-			_delay_ms(10);
+			_delay_ms(5);
 			PORTD |= 0b10000000;
 			for (uint8_t u = 0; u < sizeof(res_seq) - 1; u++){
 				shiftout(COM, eeprom_read_byte(&res_seq[u]));
@@ -294,12 +301,12 @@ uint8_t strlen_q(u_char *inp){
 	}
 	return len;
 }
-uint8_t word_out(uint8_t *param, u_char *input){
-	/*3 param: 
+/*3 param: 
 	page: byte end address|byte start address
 	x-cord: byte start address|byte end address
 	control: 0 for no word shift control, 1 for proper shift
 	*/
+uint8_t word_out(uint8_t *param, u_char *input){
 	uint8_t symbols = 0;
 	uint8_t width = 0;
 	uint8_t len = strlen_q(input);
@@ -352,61 +359,63 @@ uint8_t word_out(uint8_t *param, u_char *input){
 void fill_column(uint8_t x_coord, uint8_t width) {
 	goto_x(x_coord, x_coord + width);
 	goto_page(1, 6);
-	for (uint16_t i = 0; i <= width * 6; i++) shiftout(DATA, 0x00);
+	for (uint8_t i = 0; i <= width * 6; i++) shiftout(DATA, 0x00);
 }
 void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
 	uint8_t space = 0;
-	switch (num){
-		case 1:
-			fill_column(x_coord, 6);
-			x_coord += 7; 
+	if (num < 10){
+		if (num == 1){
+			if (status & 0x01) fill_column(x_coord, 6);
+			x_coord += 7;
 			space = 6;
-			break;
-		case 0: case 2: case 3: case 5: case 6: case 8: case 9:
-			fill_column(x_coord, 2);
+		} else {
+			if (status & 0x01) fill_column(x_coord, 2);
 			x_coord += 3;
 			space = 2;
-			break;
-		case 10:
-			space = 0;
-			break;
-	}
-	goto_x(x_coord, 127);
-	uint16_t shift = 0;
-	for (uint8_t t = 0; t <= num; t++) shift += eeprom_read_byte(&font36px_shift[t]) * 5;
-	i2c_read_arr(EEP_ADDR, 0x0500 + shift, eeprom_read_byte(&font36px_shift[num + 1]) * 5);
+		}
+	}	
+	uint16_t shift = eeprom_read_byte(&font36px_shift[num]);
+	uint16_t digit_len = (eeprom_read_byte(&font36px_shift[num + 1]) - shift);
+	shift *= 5;
+	i2c_read_arr(EEP_ADDR, 0x0500 + shift, digit_len * 5);
 	for (uint8_t p = 0; p < 5; p++){
 		goto_page(page + p, page + p);
 		goto_x(x_coord, 127);
-		for (uint16_t pos = 1; pos <= eeprom_read_byte(&font36px_shift[num + 1]); pos++){
+		for (uint8_t pos = 1; pos <= digit_len; pos++){
 			shiftout(DATA,  ret_arr[5 * pos - 1 - p]);
 		}
 	}
-	if (num != 10) fill_column(x_coord + eeprom_read_byte(&font36px_shift[num + 1]), 26- space - eeprom_read_byte(&font36px_shift[num + 1]));
+	if (num != 10 && status & 0x01) fill_column(x_coord + digit_len, 26 - space - digit_len);
+	
 }
 /*Displays time*/
-void display_time(uint8_t *time){
+void display_time(){
 	draw_big_digit(time[0] / 10, 1, 6);
 	draw_big_digit(time[0] % 10, 1, 34);
 	draw_big_digit(10, 1, 62);
 	draw_big_digit(time[1] / 10, 1, 70);
 	draw_big_digit(time[1] % 10, 1, 98);
+	status &= ~0x01;
+}
+void display_date(){
+	uint8_t param[] = {7, 7, 127 - 8 * 6, 127, 0};
+	word_out(param, date_str);
 }
 /*Rules the cursor in menu mode. 0 for just reset, 1 for up, 2 for down.*/
 void cursor_h(uint8_t upd){
 	uint8_t rem_pos = cursor_horiz;
 	switch(upd){
 		case 2:
-			if(cursor_horiz < sizeof(menu_shift) - 1)
+			if (cursor_horiz < sizeof(menu_shift) - 2)
 				cursor_horiz++;
 			else
 				cursor_horiz = 0;
 			break;
 		case 1:
-			if(cursor_horiz > 0)
+			if (cursor_horiz > 0)
 				cursor_horiz--;
 			else
-				cursor_horiz = sizeof(menu_shift) - 1;
+				cursor_horiz = sizeof(menu_shift) - 2;
 			break;
 	}
 	uint8_t param[] = {cursor_horiz, cursor_horiz, 0, 10, 1};
@@ -429,7 +438,7 @@ void show_menus(){
 	uint8_t written = 0;
 	uint8_t str = 0;
 	while(str < sizeof(menu_shift) - 1){
-		uint8_t param[] = {str, str, (127 - eeprom_read_byte(&menu_shift[str + 1]) * 6) / 2, 127, 1};
+		uint8_t param[] = {str, str, (127 - eeprom_read_byte(&menu_shift[str + 1]) * 6) / 2 + 3, 127, 1};
 		written += word_out(param, &ret_arr[written + 5]) + 1;
 		str++;
 	}
@@ -438,8 +447,8 @@ void show_menus(){
 void UART_Init(void)
 {
 	UBRRH = 0;
-	UBRRL = 12; //9600 baud
-	UCSRB = (1 << RXCIE) | (1 << RXEN) | (1 << TXEN); //interrupt at recieving, tx/rx enable
+	UBRRL = 12; //4800 baud
+	UCSRB = (1 << RXCIE) | (1 << RXEN) | (1 << TXEN); //interrupt at receiving, tx/rx enable
 	UCSRC = (1 << URSEL) | (1 << UCSZ1) | (1 << UCSZ0); //8-bit word
 }
 void UART_SendChar(u_char sym)

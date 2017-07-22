@@ -16,6 +16,10 @@ uint16_t addr = 0;
 uint8_t shift = 8;
 uint8_t UART_arr[32];
 uint8_t UART_pointer = 0;
+uint8_t line1[]={40,12,6,12,6,12,6,12};
+uint8_t line2[]={5,5,5,5,5,5,5,5};
+uint8_t *lines[] = {line1, line2};
+uint8_t line_lengths[] = {(sizeof(line1)) / 2, (sizeof(line2)) / 2};
 void show_menu(){
 	lcd_res();
 	uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127, 0};
@@ -32,6 +36,7 @@ void show_menu(){
 		break;
 		case 2:
 			word_out(param, date_str);
+			cursor_v(0, lines, 2, (sizeof(line1) + sizeof(line2)) / 2, line_lengths);
 		break;
 	}
 }
@@ -42,6 +47,9 @@ void up_short(){
 	switch(menu){
 		case 1:
 		cursor_h(1);
+		break;
+		case 2:
+		cursor_v(1, lines, 2, (sizeof(line1) + sizeof(line2)) / 2, line_lengths);
 		break;
 	}
 }
@@ -70,6 +78,9 @@ void dn_short(){
 	switch(menu){
 		case 1:
 		cursor_h(2);
+		break;
+		case 2:
+		cursor_v(2, lines, 2, (sizeof(line1) + sizeof(line2)) / 2, line_lengths);
 		break;
 	}
 }
@@ -166,8 +177,9 @@ ISR(TIMER0_OVF_vect){
 		if (temp_h > time[0])
 			ds3231_read_date(date);
 	}
+	isr_count++;
 	if 	(isr_count == 0xFF)
-	isr_count = 0;
+		isr_count = 0;
 	DDRD = 0xE0;
 	ok_button();
 	up_button();

@@ -75,7 +75,11 @@ uint8_t status = 0; //Status reg:
 /*
 0 byte -> when minutes changed. I'm using that to redraw digits on the main screen. Resets in draw_big_digit function
 */
-
+void UART_SendChar(u_char sym)
+{
+	UDR = sym;
+	while(!(UCSRA & (1 << UDRE)));
+}
 void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
 	cli();
 	if (!type)
@@ -356,20 +360,20 @@ uint8_t word_out(uint8_t *param, u_char *input){
 	}
 	return symbols;
 }
-void fill_column(uint8_t x_coord, uint8_t width) {
+void fill_column(uint8_t x_coord, uint8_t page_st, uint8_t page_end, uint8_t width, uint8_t type) {
 	goto_x(x_coord, x_coord + width);
-	goto_page(1, 6);
-	for (uint8_t i = 0; i <= width * 6; i++) shiftout(DATA, 0x00);
+	goto_page(page_st, page_end);
+	for (uint8_t i = 0; i <= width * 6; i++) shiftout(DATA, type);
 }
 void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
 	uint8_t space = 0;
 	if (num < 10){
 		if (num == 1){
-			if (status & 0x01) fill_column(x_coord, 6);
+			if (status & 0x01) fill_column(x_coord, 1, 6, 6, 0);
 			x_coord += 7;
 			space = 6;
 		} else {
-			if (status & 0x01) fill_column(x_coord, 2);
+			if (status & 0x01) fill_column(x_coord, 1, 6, 2, 0);
 			x_coord += 3;
 			space = 2;
 		}
@@ -385,7 +389,7 @@ void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
 			shiftout(DATA,  ret_arr[5 * pos - 1 - p]);
 		}
 	}
-	if (num != 10 && status & 0x01) fill_column(x_coord + digit_len, 26 - space - digit_len);
+	if (num != 10 && status & 0x01) fill_column(x_coord + digit_len, 1, 6, 26 - space - digit_len, 0);
 	
 }
 /*Displays time*/
@@ -428,6 +432,62 @@ void cursor_h(uint8_t upd){
 		word_out(param, null);
 	}
 }
+uint8_t cursor_v_pos = 0;
+void draw_cursor(uint8_t cursor_pos_t, uint8_t** lines, uint8_t* line_lengths, uint8_t page_st, uint8_t fill){
+	uint8_t i = 0;
+	while(cursor_pos_t >= *(line_lengths + i)){
+		cursor_pos_t -= *(line_lengths + i);
+		i++;
+	}
+	if (i >= 2) {
+		cursor_pos_t += *(line_lengths + i);
+		i--;
+	}
+	uint8_t temp_sum = 0;
+	for (uint8_t j = 0; j <= cursor_pos_t * 2; j++){
+		temp_sum += *(*(lines + i) + j);
+	}
+	fill_column(temp_sum, page_st + i * 2, page_st + i * 2, *(*(lines + i) + cursor_pos_t * 2 + 1), fill);
+}
+/*Rules cursor in vertical mode*/
+/*Lines:
+arrays of elem_pos && margin
+page_st - page start
+interval - 1 line
+*/
+void cursor_v(uint8_t upd, uint8_t** lines, uint8_t page_st, uint8_t menu_len, uint8_t* line_lengths){
+	if (upd == 1){
+		if (cursor_v_pos < menu_len - 1){
+			//fill cursor element with 0
+			draw_cursor(cursor_v_pos, lines, line_lengths, page_st, 0);
+			//fill current pos + 1 with 1
+			draw_cursor(++cursor_v_pos, lines, line_lengths, page_st, 1);
+		} else {
+			//fill cursor pos with 0
+			draw_cursor(cursor_v_pos, lines, line_lengths, page_st, 0);
+			//fill 0 with 1
+			draw_cursor(0, lines, line_lengths, page_st, 1);
+			cursor_v_pos = 0;
+		}
+	} else {
+		if (upd){
+			if (cursor_v_pos > 0){
+				//fill cursor element with 0
+				draw_cursor(cursor_v_pos, lines, line_lengths, page_st, 0);
+				//fill current pos - 1 with 1
+				draw_cursor(--cursor_v_pos, lines, line_lengths, page_st, 1);
+				} else {
+				//fill cursor pos with 0
+				draw_cursor(cursor_v_pos, lines, line_lengths, page_st, 0);
+				//fill max-elem with 1
+				draw_cursor(menu_len - 1, lines, line_lengths, page_st, 1);
+				cursor_v_pos = menu_len - 1;
+			}
+		} else {
+			draw_cursor(cursor_v_pos, lines, line_lengths, page_st, 1);
+		}
+	}
+}
 /*Menus in menu select mode*/
 void show_menus(){
 	uint8_t len = 0;
@@ -450,11 +510,6 @@ void UART_Init(void)
 	UBRRL = 12; //4800 baud
 	UCSRB = (1 << RXCIE) | (1 << RXEN) | (1 << TXEN); //interrupt at receiving, tx/rx enable
 	UCSRC = (1 << URSEL) | (1 << UCSZ1) | (1 << UCSZ0); //8-bit word
-}
-void UART_SendChar(u_char sym)
-{
-	UDR = sym;
-	while(!(UCSRA & (1 << UDRE)));
 }
 
 

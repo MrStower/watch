@@ -69,8 +69,9 @@ uint8_t menu_shift[] EEMEM = {0, 5, 6, 11, 7, 6};
 uint8_t font36px_shift[] EEMEM = {0, 22, 34, 57, 79, 105, 126, 147, 170, 192, 213, 219};
 u_char ok[] EEMEM = "OK\0";
 u_char res[] EEMEM = "RES\0";
-u_char on_off[] EEMEM = "ON OFF\0";
-u_char dow[] EEMEM = "Ïí Âò Ñð ×ò Ïò Ñá Âñ\0";
+u_char on[] EEMEM = "ON\0";
+u_char off[] EEMEM = "OFF\0";
+u_char dow[] EEMEM = "Ïí. Âò. Ñð. ×ò. Ïò. Ñá. Âñ.\0";
 uint8_t cursor_horiz = 0;
 uint8_t time[3];
 uint8_t date[4];
@@ -78,10 +79,10 @@ u_char date_str[] = "dd/mm/yy\0";
 u_char time_str[] = "hh:mm:ss\0";
 uint8_t date_temp[4];
 uint8_t time_temp[3];
-uint8_t alarm1[3] EEMEM = {12, 0, 4};
-uint8_t alarm2[3] EEMEM = {12, 0, 4};	
-uint8_t alarm1_temp[3] = {12, 0, 4};
-uint8_t alarm2_temp[3] = {12, 0, 4};
+uint8_t alarm1[3] EEMEM = {12, 0};
+uint8_t alarm2[3] EEMEM = {12, 0};	
+uint8_t alarm1_temp[3] = {12, 0};
+uint8_t alarm2_temp[3] = {12, 0};
 uint8_t alarm_str1[] = "hh:mm\0";
 uint8_t alarm_str2[] = "hh:mm\0";
 uint8_t status = 0; //Status reg:
@@ -89,7 +90,6 @@ uint8_t status = 0; //Status reg:
 0 bit -> when minutes changed. I'm using that to redraw digits on the main screen. Resets in draw_big_digit function
 1 bit -> alarm 1 set
 2 bit -> alarm 2 set
-3 bit -> UART flag
 */
 #define UART_FLAG status & 0x08
 #define UART_FLAG_SET status |= 0x08
@@ -426,16 +426,6 @@ void comp_date(){
 void comp_time(){
 	for(uint8_t i = 0; i < 3; i++){
 		time_temp[i] = time[i];
-	}
-}
-void upd_alarm_str(){
-	for (uint8_t i = 0; i < 2; i++){
-		alarm_str1[i * 3] = eeprom_read_byte(alarm1 + i) / 10 + '0';
-		alarm_str1[i * 3 + 1] =  eeprom_read_byte(alarm1 + i) % 10 + '0';
-		alarm_str2[i * 3] =  eeprom_read_byte(alarm2 + i) / 10 + '0';
-		alarm_str2[i * 3 + 1] =  eeprom_read_byte(alarm2 + i) % 10 + '0';
-		alarm1_temp[i] = eeprom_read_byte(alarm1 + i);
-		alarm2_temp[i] = eeprom_read_byte(alarm2 + i);
 	}
 }
 /*Displays time*/

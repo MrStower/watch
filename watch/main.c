@@ -15,34 +15,52 @@ uint16_t addr = 0;
 uint8_t shift = 8;
 uint8_t UART_arr[32];
 uint8_t UART_pointer = 0;
-uint8_t date_menu_line1[] = {41, 12, 6, 12, 6, 12};
-uint8_t date_menu_line2[] = {46, 12, 6, 18};
+uint8_t date_menu_line1[] = {41,12,6,12,6,12};
+uint8_t date_menu_line2[] = {46,12,6,18};
 uint8_t *lines[] = {date_menu_line1, date_menu_line2};
 uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127, 0};
 	
 #define DATE_TIME_MENU_LINE1_LEN  (sizeof(date_menu_line1)) / 2
 #define DATE_TIME_MENU_LINE2_LEN  (sizeof(date_menu_line2)) / 2
 uint8_t date_time_menu_line_lengths[] = {DATE_TIME_MENU_LINE1_LEN, DATE_TIME_MENU_LINE2_LEN};
-uint8_t alarm_menu_line1[] = {28, 12, 6, 12, 6, 12, 6, 18};
-uint8_t alarm_menu_line2[] = {3, 12, 6, 12, 6, 12, 6, 12, 6, 12, 6, 12, 6, 12};
-//uint8_t alarm_menu_line3[] = {28, 12, 6, 12, 6, 12, 6, 18};
-//uint8_t alarm_menu_line4[] = {3, 12, 6, 12, 6, 12, 6, 12, 6, 12, 6, 12, 6, 12};	
-uint8_t *alarm_lines[] = {alarm_menu_line1, alarm_menu_line2, alarm_menu_line1, alarm_menu_line2};
-#define ALARM_MENU_LINE1_3_LEN  (sizeof(alarm_menu_line1)) / 2
-#define ALARM_MENU_LINE2_4_LEN  (sizeof(alarm_menu_line2)) / 2
-uint8_t alarm_menu_line_lengths[] = {ALARM_MENU_LINE1_3_LEN, ALARM_MENU_LINE2_4_LEN, ALARM_MENU_LINE1_3_LEN, ALARM_MENU_LINE2_4_LEN};
-uint8_t show_menu(){
+void show_menu(){
 	lcd_res();
-	if (menu == 2 || menu / 10 == 2){
-		word_out(param, date_str);
-		goto_page(3, 3);
-		goto_x(46, 127);
-		eep_str_write(ok, 2);
-		goto_page(3, 3);
-		goto_x(46 + 18, 127);
-		eep_str_write(res, 3);
-		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
-		return 0;
+	switch(menu){
+		case 31:
+		case 32:
+		case 33:
+		case 34:
+		case 35:
+		case 3:
+			for (uint8_t i = 0; i < 3; i++){
+				time_str[i * 3] = time[i] / 10 + '0';
+				time_str[i * 3 + 1] = time[i] % 10 + '0';
+			}
+			time_str[8] = '\0';
+			word_out(param, time_str);
+			goto_page(3, 3);
+			goto_x(46, 127);
+			eep_str_write(ok, 2);
+			goto_page(3, 3);
+			goto_x(46 + 18, 127);
+			eep_str_write(res, 3);
+			cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
+		break;
+		case 21:
+		case 22:
+		case 23:
+		case 24:
+		case 25:
+		case 2:
+			word_out(param, date_str);
+			goto_page(3, 3);
+			goto_x(46, 127);
+			eep_str_write(ok, 2);
+			goto_page(3, 3);
+			goto_x(46 + 18, 127);
+			eep_str_write(res, 3);
+			cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
+		break;
 	}
 	if (menu == 3 || menu / 10 == 3){
 		for (uint8_t i = 0; i < 3; i++){
@@ -96,6 +114,7 @@ void up_long(){
 	
 }
 void up_short(){
+	//uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127, 0};
 	switch(menu){
 		case 1:
 			cursor_h(1);
@@ -152,9 +171,6 @@ void up_short(){
 			time_str[6] = time_temp[2] / 10 + '0';
 			time_str[7] = time_temp[2] % 10 + '0';
 		break;
-		case 4:
-			cursor_v(1, alarm_lines, 1, 2 * (ALARM_MENU_LINE1_3_LEN + ALARM_MENU_LINE2_4_LEN), alarm_menu_line_lengths);
-		break;
 	}
 	if (menu / 10 == 2){
 		word_out(param, date_str);
@@ -163,10 +179,6 @@ void up_short(){
 	if (menu / 10 == 3){
 		word_out(param, time_str);
 		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
-	}
-	if (menu / 10 % 10== 4){
-		word_out(param, time_str);
-		cursor_v(0, lines, 1, 2 * (ALARM_MENU_LINE1_3_LEN + ALARM_MENU_LINE2_4_LEN), alarm_menu_line_lengths);
 	}
 }
 uint8_t statef = 0;
@@ -201,9 +213,6 @@ void dn_short(){
 		break;
 		case 3:
 			cursor_v(2, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
-		break;
-		case 4:
-			cursor_v(2, alarm_lines, 1, 2 * (ALARM_MENU_LINE1_3_LEN + ALARM_MENU_LINE2_4_LEN), alarm_menu_line_lengths);
 		break;
 		case 21:
 			date_temp[1]--;
@@ -259,10 +268,6 @@ void dn_short(){
 	if (menu / 10 == 3){
 		word_out(param, time_str);
 		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
-	}
-	if (menu / 10 % 10 == 4){
-		word_out(param, time_str);
-		cursor_v(0, alarm_lines, 1, 2 * (ALARM_MENU_LINE1_3_LEN + ALARM_MENU_LINE2_4_LEN), alarm_menu_line_lengths);
 	}
 }
 void dn_button(){
@@ -361,7 +366,6 @@ void ok_long(){
 		case 2:	
 			ds3231_read_date();
 			menu = 1;
-			cursor_v_pos = 0;
 			shiftout(DATA, 0x00); // doesn't work without it - why?
 			lcd_res();
 			show_menus();
@@ -380,16 +384,7 @@ void ok_long(){
 		case 3:
 			ds3231_read_time();
 			menu = 1;
-			cursor_v_pos = 0;
 			shiftout(DATA, 0x00); // doesn't work without it - why?
-			lcd_res();
-			show_menus();
-			cursor_h(0);
-		break;
-		case 4:
-			menu = 1;
-			shiftout(DATA, 0x00); // doesn't work without it - why?
-			cursor_v_pos = 0;
 			lcd_res();
 			show_menus();
 			cursor_h(0);
@@ -431,7 +426,7 @@ ISR(TIMER0_OVF_vect){
 			UART_SendChar('O');
 			UART_SendChar('K');
 		}
-		UART_FLAG_RESET;
+		UART_flag = 0;
 /*		UART_SendChar(addr >> 8);
 		UART_SendChar(addr);
 		for (uint8_t r = 0; r < UART_pointer; r++){

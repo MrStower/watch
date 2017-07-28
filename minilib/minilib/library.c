@@ -8,6 +8,7 @@
 #include <avr/sleep.h>
 #define u_char unsigned char
 
+
 #define PRESCALER           0 //F_CPU/(16+2(PRESCALER)*4^0)
 #define TWI_START    0
 #define TWI_RESTART	 1

@@ -16,27 +16,50 @@ uint16_t addr = 0;
 uint8_t shift = 8;
 uint8_t UART_arr[32];
 uint8_t UART_pointer = 0;
-uint8_t line1[]={40,12,6,12,6,12,6,12};
-uint8_t line2[]={5,5,5,5,5,5,5,5};
-uint8_t *lines[] = {line1, line2};
-uint8_t line_lengths[] = {(sizeof(line1)) / 2, (sizeof(line2)) / 2};
+uint8_t date_menu_line1[] = {41,12,6,12,6,12};
+uint8_t date_menu_line2[] = {46,12,6,18};
+uint8_t *lines[] = {date_menu_line1, date_menu_line2};
+uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127, 0};
+#define DATE_TIME_MENU_LINE1_LEN  (sizeof(date_menu_line1)) / 2
+#define DATE_TIME_MENU_LINE2_LEN  (sizeof(date_menu_line2)) / 2
+uint8_t date_time_menu_line_lengths[] = {DATE_TIME_MENU_LINE1_LEN, DATE_TIME_MENU_LINE2_LEN};
 void show_menu(){
 	lcd_res();
-	uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127, 0};
 	switch(menu){
+		case 31:
+		case 32:
+		case 33:
+		case 34:
+		case 35:
 		case 3:
-			time_str[0] = time[0] / 10 + '0';
-			time_str[1] = time[0] % 10 + '0';
-			time_str[3] = time[1] / 10 + '0';
-			time_str[4] = time[1] % 10 + '0';
-			time_str[6] = time[2] / 10 + '0';
-			time_str[7] = time[2] % 10 + '0';
+			for (uint8_t i = 0; i < 3; i++){
+				time_str[i * 3] = time[i] / 10 + '0';
+				time_str[i * 3 + 1] = time[i] % 10 + '0';
+			}
 			time_str[8] = '\0';
 			word_out(param, time_str);
+			goto_page(3, 3);
+			goto_x(46, 127);
+			eep_str_write(ok, 2);
+			goto_page(3, 3);
+			goto_x(46 + 18, 127);
+			eep_str_write(res, 3);
+			cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 		break;
+		case 21:
+		case 22:
+		case 23:
+		case 24:
+		case 25:
 		case 2:
 			word_out(param, date_str);
-			cursor_v(0, lines, 2, (sizeof(line1) + sizeof(line2)) / 2, line_lengths);
+			goto_page(3, 3);
+			goto_x(46, 127);
+			eep_str_write(ok, 2);
+			goto_page(3, 3);
+			goto_x(46 + 18, 127);
+			eep_str_write(res, 3);
+			cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 		break;
 	}
 }
@@ -44,13 +67,71 @@ void up_long(){
 	
 }
 void up_short(){
+	//uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127, 0};
 	switch(menu){
 		case 1:
-		cursor_h(1);
+			cursor_h(1);
 		break;
 		case 2:
-		cursor_v(1, lines, 2, (sizeof(line1) + sizeof(line2)) / 2, line_lengths);
+			cursor_v(1, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 		break;
+		case 21:
+			date_temp[1]++;
+			check_day_correct();
+			date_str[0] = date_temp[1] / 10 + '0';
+			date_str[1] = date_temp[1] % 10 + '0';
+		break;
+		case 22:
+			if (date_temp[2] < 12)
+				date_temp[2]++;
+			else
+				date_temp[2] = 1;
+			date_str[3] = date_temp[2] / 10 + '0';
+			date_str[4] = date_temp[2] % 10 + '0';
+		break;
+		case 23:
+			if (date_temp[3] < 99)
+				date_temp[3]++;
+			else
+				date_temp[3] = 0;
+			date_str[6] = date_temp[3] / 10 + '0';
+			date_str[7] = date_temp[3] % 10 + '0';
+		break;
+		case 3:
+			cursor_v(1, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
+		break;
+		case 31:
+			if (time_temp[0] < 23)
+				time_temp[0]++;
+			else
+				time_temp[0] = 0;
+			time_str[0] = time_temp[0] / 10 + '0';
+			time_str[1] = time_temp[0] % 10 + '0';
+		break;
+		case 32:
+			if (time_temp[1] < 59)
+				time_temp[1]++;
+			else
+				time_temp[1] = 0;
+			time_str[3] = time_temp[1] / 10 + '0';
+			time_str[4] = time_temp[1] % 10 + '0';
+		break;
+		case 33:
+			if (time_temp[2] < 59)
+				time_temp[2]++;
+			else
+				time_temp[2] = 0;
+			time_str[6] = time_temp[2] / 10 + '0';
+			time_str[7] = time_temp[2] % 10 + '0';
+		break;
+	}
+	if (menu / 10 == 2){
+		word_out(param, date_str);
+		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
+	}
+	if (menu / 10 == 3){
+		word_out(param, time_str);
+		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 	}
 }
 uint8_t statef = 0;
@@ -75,13 +156,71 @@ void dn_long(){
 
 }
 void dn_short(){
+		//uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127, 0};
 	switch(menu){
 		case 1:
-		cursor_h(2);
+			cursor_h(2);
 		break;
 		case 2:
-		cursor_v(2, lines, 2, (sizeof(line1) + sizeof(line2)) / 2, line_lengths);
+			cursor_v(2, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 		break;
+		case 3:
+			cursor_v(2, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
+		break;
+		case 21:
+			date_temp[1]--;
+			check_day_correct();
+			date_str[0] = date_temp[1] / 10 + '0';
+			date_str[1] = date_temp[1] % 10 + '0';
+		break;
+		case 22:
+			if (date_temp[2] > 1)
+				date_temp[2]--;
+			else
+				date_temp[2] = 12;
+			date_str[3] = date_temp[2] / 10 + '0';
+			date_str[4] = date_temp[2] % 10 + '0';
+		break;
+		case 23:
+			if (date_temp[3] > 0)
+				date_temp[3]--;
+			else
+				date_temp[3] = 99;
+			date_str[6] = date_temp[3] / 10 + '0';
+			date_str[7] = date_temp[3] % 10 + '0';
+		break;
+		case 31:
+			if (time_temp[0] > 0)
+				time_temp[0]--;
+			else
+				time_temp[2] = 23;
+			time_str[0] = time_temp[0] / 10 + '0';
+			time_str[1] = time_temp[0] % 10 + '0';
+		break;
+		case 32:
+			if (time_temp[1] > 0)
+				time_temp[1]--;
+			else
+				time_temp[1] = 59;
+			time_str[3] = time_temp[1] / 10 + '0';
+			time_str[4] = time_temp[1] % 10 + '0';
+		break;
+		case 33:
+			if (time_temp[2] > 0)
+				time_temp[2]--;
+			else
+				time_temp[2] = 59;
+			time_str[6] = time_temp[2] / 10 + '0';
+			time_str[7] = time_temp[2] % 10 + '0';
+		break;
+	}
+	if (menu / 10 == 2){
+		word_out(param, date_str);
+		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
+	}
+	if (menu / 10 == 3){
+		word_out(param, time_str);
+		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 	}
 }
 void dn_button(){
@@ -101,6 +240,33 @@ void dn_button(){
 			}
 		}
 }
+void apply_changes(){
+	switch (menu){
+		case 24:
+			ds3231_write_date(date_temp[0], date_temp[1], date_temp[2], date_temp[3]);
+			ds3231_read_date();
+			menu = 2;
+		break;
+		case 25:
+			comp_date();
+			menu = 2;
+			lcd_res();
+			show_menu();
+		break;
+		case 34:
+			ds3231_write_time(time_temp[0], time_temp[1], time_temp[2]);
+			ds3231_read_time();
+			menu = 3;
+		break;
+		case 35:
+			comp_time();
+			menu = 3;
+			lcd_res();
+			show_menu();
+		break;
+	}
+}
+uint8_t prev_menu = 0;
 void ok_short(){
 	switch(menu){
 		case 0:
@@ -109,23 +275,77 @@ void ok_short(){
 			delay = DEL;
 			display_time();
 			display_date();
-			break;
+		break;
 		case 1:
 			menu = cursor_horiz + 2;
 			show_menu();
 			cursor_horiz = 0;
-			break;
+			cursor_v_pos = 0;
+		break;
+		case 2:
+			if (prev_menu == 1)
+				comp_date();
+			menu = 21 + cursor_v_pos;
+			apply_changes();
+		break;
+		case 3:
+			if (prev_menu == 1)
+				comp_time();
+			menu = 31 + cursor_v_pos;
+			apply_changes();
+		break;
+		case 21:
+		case 22:
+		case 23:
+		menu = 2;
+		break;
+		case 31:
+		case 32:
+		case 33:
+		menu = 3;
+		break;
 	}
+	prev_menu = menu;
 }
 void ok_long(){
-	if (menu != 1){
-		lcd_res();
-		show_menus();
-		cursor_h(0);
-		menu = 1;
-	} else {
-		menu = 0;
-		lcd_res();
+	switch(menu){
+		case 0:
+			menu = 1;
+			shiftout(DATA, 0x00); // doesn't work without it - why?
+			lcd_res();
+			show_menus();
+			cursor_h(0);
+		break;
+		case 2:	
+			ds3231_read_date();
+			menu = 1;
+			shiftout(DATA, 0x00); // doesn't work without it - why?
+			lcd_res();
+			show_menus();
+			cursor_h(0);
+		break;
+		case 21:
+		case 22:
+		case 23:
+			menu = 2;
+		break;
+		case 31:
+		case 32:
+		case 33:
+			menu = 3;
+		break;
+		case 3:
+			ds3231_read_time();
+			menu = 1;
+			shiftout(DATA, 0x00); // doesn't work without it - why?
+			lcd_res();
+			show_menus();
+			cursor_h(0);
+		break;
+		case 1:
+			menu = 0;
+			lcd_res();
+		break;
 	}
 }
 void ok_button(){
@@ -160,11 +380,11 @@ ISR(TIMER0_OVF_vect){
 			UART_SendChar('K');
 		}
 		UART_flag = 0;
-		UART_SendChar(addr >> 8);
+/*		UART_SendChar(addr >> 8);
 		UART_SendChar(addr);
 		for (uint8_t r = 0; r < UART_pointer; r++){
 			UART_SendChar(i2c_read_byte(EEP_ADDR, addr + r));
-		}
+		}*/
 		UART_pointer = 0;
 	}
 	if (!(isr_count % 10)){
@@ -233,8 +453,8 @@ int main(void)
 	ds3231_init();
 	UART_Init();
 	lcd_res();
-	ds3231_write_reg(0x0E, 0x04); //disables BBSQW
-	ds3231_write_reg(0x0F, 0x00); //disables 32kHz output
+	i2c_send_byte(DS_ADDR, 0x0E, 0x04); //disables BBSQW
+	i2c_send_byte(DS_ADDR, 0x0F, 0x00); //disables 32kHz output
 	ds3231_read_time();
 	ds3231_read_date();
 	display_time();

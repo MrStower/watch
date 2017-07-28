@@ -66,14 +66,29 @@ uint8_t ret_arr[196];
 uint8_t res_seq[] EEMEM = {0xAE, 0xD5, 0xF0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x00, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF};
 uint8_t menu_shift[] EEMEM = {0, 5, 6, 11, 7, 6};
 uint8_t font36px_shift[] EEMEM = {0, 22, 34, 57, 79, 105, 126, 147, 170, 192, 213, 219};
+u_char ok[] EEMEM = "OK\0";
+u_char res[] EEMEM = "RES\0";
+u_char on[] EEMEM = "ON\0";
+u_char off[] EEMEM = "OFF\0";
+u_char dow[] EEMEM = "Ïí. Âò. Ñð. ×ò. Ïò. Ñá. Âñ.\0";
 uint8_t cursor_horiz = 0;
 uint8_t time[3];
 uint8_t date[4];
 u_char date_str[] = "dd/mm/yy\0";
 u_char time_str[] = "hh:mm:ss\0";
+uint8_t date_temp[4];
+uint8_t time_temp[3];
+uint8_t alarm1[3] EEMEM = {12, 0};
+uint8_t alarm2[3] EEMEM = {12, 0};	
+uint8_t alarm1_temp[3] = {12, 0};
+uint8_t alarm2_temp[3] = {12, 0};
+uint8_t alarm_str1[] = "hh:mm\0";
+uint8_t alarm_str2[] = "hh:mm\0";
 uint8_t status = 0; //Status reg:
 /*
-0 byte -> when minutes changed. I'm using that to redraw digits on the main screen. Resets in draw_big_digit function
+0 bit -> when minutes changed. I'm using that to redraw digits on the main screen. Resets in draw_big_digit function
+1 bit -> alarm 1 set
+2 bit -> alarm 2 set
 */
 void UART_SendChar(u_char sym)
 {
@@ -108,15 +123,19 @@ void i2c_init(){
 }
 /*Goes to page. 4-byte end address|4-byte start address*/
 void goto_page(uint8_t page_st, uint8_t page_end){
+	cli();
 	shiftout(COM, 0x22);
 	shiftout(COM, page_st);
 	shiftout(COM, page_end);
+	sei();
 }
 /*Goes to x-dim. 4-byte end address|4-byte start address*/
 void goto_x(uint8_t shift_f, uint8_t shift_s){
+	cli();
 	shiftout(COM, 0x21);
 	shiftout(COM, shift_f);
 	shiftout(COM, shift_s);
+	sei();
 }
 /*Select action*/
 uint8_t i2c_action(uint8_t action){
@@ -244,12 +263,6 @@ void ds3231_init(void){
 	temp = i2c_read_byte(DS_ADDR, (0x1000 | DS3231_CONTROL)); //magic trick!
 	i2c_send_byte(DS_ADDR, (0x1000 | DS3231_CONTROL), temp & 0x7F);
 }
-void ds3231_write_reg(uint8_t reg, uint8_t data){
-	i2c_send_byte(DS_ADDR, reg, data);
-}
-uint8_t ds3231_read_reg(uint8_t reg){
-	return i2c_read_byte(DS_ADDR, reg);
-}
 /*Because of tricky data format in RTC*/
 uint8_t ds3231_byte(uint8_t data){
 	return ((data / 10 << 4) | data % 10);
@@ -270,12 +283,10 @@ void ds3231_read_date(){
 	date[1] = (ret_arr[1] & 0x0F) + (ret_arr[1] >> 4) * 10;
 	date[2] = ((ret_arr[2] & 0x10) >> 4) * 10 + (ret_arr[2] & 0x0F);
 	date[3] = (ret_arr[3] >> 4) * 10 + (ret_arr[3] & 0x0F);
-	date_str[0] = date[1] / 10 + '0';
-	date_str[1] = date[1] % 10 + '0';
-	date_str[3] = date[2] / 10 + '0';
-	date_str[4] = date[2] % 10 + '0';
-	date_str[6] = date[3] / 10 + '0';
-	date_str[7] = date[3] % 10 + '0';
+	for (uint8_t i = 0; i < 3; i++){
+		date_str[i * 3] = date[1 + i] / 10 + '0';
+		date_str[i * 3 + 1] = date[1 + i] % 10 + '0';
+	}
 	date_str[8] = '\0';
 }
 void ds3231_write_date(uint8_t date, uint8_t day, uint8_t month, uint8_t year){
@@ -284,18 +295,29 @@ void ds3231_write_date(uint8_t date, uint8_t day, uint8_t month, uint8_t year){
 }
 /*Display reset, looks weird*/
 void lcd_res(){
-			PORTD |= 0b10000000;
-			_delay_us(250);
-			PORTD &= 0b01111111;
-			_delay_ms(5);
-			PORTD |= 0b10000000;
-			for (uint8_t u = 0; u < sizeof(res_seq) - 1; u++){
-				shiftout(COM, eeprom_read_byte(&res_seq[u]));
-			}
-			for(uint16_t u = 0; u < 1024; u++){
-				shiftout(DATA, 0x00);
-			}
-			shiftout(COM, eeprom_read_byte(&res_seq[sizeof(res_seq) - 1]));
+	cli();
+	PORTD |= 0b10000000;
+	_delay_us(250);
+	PORTD &= 0b01111111;
+	_delay_ms(5);
+	PORTD |= 0b10000000;
+	for (uint8_t u = 0; u < sizeof(res_seq) - 1; u++){
+			shiftout(COM, eeprom_read_byte(&res_seq[u]));
+	}
+	for(uint16_t u = 0; u < 1024; u++){
+		shiftout(DATA, 0x00);
+	}
+	shiftout(COM, eeprom_read_byte(&res_seq[sizeof(res_seq) - 1]));
+	sei();
+}
+void eep_str_write(uint8_t* inp, uint8_t len){
+	for (uint8_t i = 0; i < len; i++){
+		i2c_read_arr(EEP_ADDR, (uint16_t) eeprom_read_byte(inp + i) * 5, 5);
+		for (uint8_t r = 0; r < 5; r++){
+			shiftout(DATA, ret_arr[r]);
+		}
+		shiftout(DATA, 0x00);
+	}
 }
 /*Puts a string to lcd with small amount of parameters*/
 uint8_t strlen_q(u_char *inp){
@@ -314,7 +336,7 @@ uint8_t word_out(uint8_t *param, u_char *input){
 	uint8_t symbols = 0;
 	uint8_t width = 0;
 	uint8_t len = strlen_q(input);
-	uint8_t curr_page = 0x0F & *param;
+	uint8_t curr_page = *param;
 	goto_page(*(param), *(param + 1));
 	goto_x(*(param + 2), *(param + 3));
 	for (uint8_t w = 0; input[w]; w++){
@@ -392,6 +414,16 @@ void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
 	if (num != 10 && status & 0x01) fill_column(x_coord + digit_len, 1, 6, 26 - space - digit_len, 0);
 	
 }
+void comp_date(){
+	for(uint8_t i = 0; i < 4; i++){
+		date_temp[i] = date[i];
+	}
+}
+void comp_time(){
+	for(uint8_t i = 0; i < 3; i++){
+		time_temp[i] = time[i];
+	}
+}
 /*Displays time*/
 void display_time(){
 	draw_big_digit(time[0] / 10, 1, 6);
@@ -402,7 +434,7 @@ void display_time(){
 	status &= ~0x01;
 }
 void display_date(){
-	uint8_t param[] = {7, 7, 127 - 8 * 6, 127, 0};
+	uint8_t param[] = {7, 7, 127 - 8 * 6, 127, 0, 0};
 	word_out(param, date_str);
 }
 /*Rules the cursor in menu mode. 0 for just reset, 1 for up, 2 for down.*/
@@ -433,6 +465,25 @@ void cursor_h(uint8_t upd){
 	}
 }
 uint8_t cursor_v_pos = 0;
+void check_day_correct(){
+		if ((date_temp[2] % 2 && date_temp[2] < 8) || (!(date_temp[2] % 2) && date_temp[2] > 7)){
+			if (date_temp[1] > 31) date_temp[1] = 1;
+			if (!date_temp[1]) date_temp[1] = 31;
+		} else {
+			if (date_temp[2] == 2){
+				if ((((date_temp[3] + 2000) % 100) && !((date_temp[3] + 2000) % 4)) || !((date_temp[3] + 2000) % 400)){
+					if (date_temp[1] > 29) date_temp[1] = 1;
+					if (!date_temp[1]) date_temp[1] = 29;
+				} else {
+					if (date_temp[1] > 28) date_temp[1] = 1;
+					if (!date_temp[1]) date_temp[1] = 28;
+				}
+			} else {
+				if (date_temp[1] > 30) date_temp[1] = 1;
+				if (!date_temp[1]) date_temp[1] = 30;
+			}
+		}
+}
 void draw_cursor(uint8_t cursor_pos_t, uint8_t** lines, uint8_t* line_lengths, uint8_t page_st, uint8_t fill){
 	uint8_t i = 0;
 	while(cursor_pos_t >= *(line_lengths + i)){
@@ -498,7 +549,7 @@ void show_menus(){
 	uint8_t written = 0;
 	uint8_t str = 0;
 	while(str < sizeof(menu_shift) - 1){
-		uint8_t param[] = {str, str, (127 - eeprom_read_byte(&menu_shift[str + 1]) * 6) / 2 + 3, 127, 1};
+		uint8_t param[] = {str, str, (127 - eeprom_read_byte(&menu_shift[str + 1]) * 6) / 2 + 3, 127, 1, 0};
 		written += word_out(param, &ret_arr[written + 5]) + 1;
 		str++;
 	}

@@ -19,7 +19,6 @@ uint8_t date_menu_line1[] = {41, 12, 6, 12, 6, 12};
 uint8_t date_menu_line2[] = {46, 12, 6, 18};
 uint8_t *lines[] = {date_menu_line1, date_menu_line2};
 uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127, 0};
-	
 #define DATE_TIME_MENU_LINE1_LEN  (sizeof(date_menu_line1)) / 2
 #define DATE_TIME_MENU_LINE2_LEN  (sizeof(date_menu_line2)) / 2
 uint8_t date_time_menu_line_lengths[] = {DATE_TIME_MENU_LINE1_LEN, DATE_TIME_MENU_LINE2_LEN};

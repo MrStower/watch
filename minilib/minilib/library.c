@@ -422,6 +422,18 @@ void comp_date(){
 		date_temp[i] = date[i];
 	}
 }
+void tempDate_str(){
+	for (uint8_t i = 0; i < 3; i++){
+		date_str[i * 3] = date_temp[1 + i] / 10 + '0';
+		date_str[i * 3 + 1] = date_temp[1 + i] % 10 + '0';
+	}
+}
+void tempTime_str(){
+	for (uint8_t i = 0; i < 3; i++){
+		time_str[i * 3] = time_temp[i] / 10 + '0';
+		time_str[i * 3 + 1] = time_temp[i] % 10 + '0';
+	}
+}
 void comp_time(){
 	for(uint8_t i = 0; i < 3; i++){
 		time_temp[i] = time[i];
@@ -468,13 +480,11 @@ void cursor_h(uint8_t upd){
 			break;
 	}
 	uint8_t param[] = {cursor_horiz, cursor_horiz, 0, 10, 1};
-	u_char pointer[] = ">\0";
-	word_out(param, pointer);	
+	word_out(param,(u_char*)  ">\0");	
 	if(upd){
 		param[0] = rem_pos;
 		param[1] = rem_pos;
-		u_char null[] = " \0";
-		word_out(param, null);
+		word_out(param, (u_char*) " \0");
 	}
 }
 uint8_t cursor_v_pos = 0;
@@ -484,7 +494,10 @@ void check_day_correct(){
 			if (!date_temp[1]) date_temp[1] = 31;
 		} else {
 			if (date_temp[2] == 2){
-				if ((((date_temp[3] + 2000) % 100) && !((date_temp[3] + 2000) % 4)) || !((date_temp[3] + 2000) % 400)){
+				//if ((((date_temp[3] + 2000) % 100) && !((date_temp[3] + 2000) % 4)) || !((date_temp[3] + 2000) % 400)){
+				/*Truly check for year
+				lite version - till year 2099*/
+				if (!(date_temp[3] % 4)){
 					if (date_temp[1] > 29) date_temp[1] = 1;
 					if (!date_temp[1]) date_temp[1] = 29;
 				} else {
@@ -503,25 +516,10 @@ void draw_cursor(uint8_t cursor_pos_t, uint8_t** lines, uint8_t* line_lengths, u
 		cursor_pos_t -= *(line_lengths + i);
 		i++;
 	}
-	UART_SendChar('i');
-	UART_SendChar(i / 10 + '0');
-	UART_SendChar(i % 10 + '0');
-	UART_SendChar('\n');
-	UART_SendChar('\r');
-	/*if (i >= 2) {
-		cursor_pos_t += *(line_lengths + i);
-		i--;
-	}*/
 	uint8_t temp_sum = 0;
 	for (uint8_t j = 0; j <= cursor_pos_t * 2; j++){
 		temp_sum += *(*(lines + i) + j);
 	}
-	UART_SendChar('t');
-	UART_SendChar(temp_sum / 100 + '0');
-	UART_SendChar(temp_sum % 100 / 10 + '0');
-	UART_SendChar(temp_sum % 10 + '0');
-	UART_SendChar('\n');
-	UART_SendChar('\r');
 	fill_column(temp_sum, page_st + i * 2, page_st + i * 2, *(*(lines + i) + cursor_pos_t * 2 + 1), fill);
 }
 /*Rules cursor in vertical mode*/
@@ -573,7 +571,7 @@ void show_menus(){
 	uint8_t written = 0;
 	uint8_t str = 0;
 	while(str < sizeof(menu_shift) - 1){
-		uint8_t param[] = {str, str, (127 - eeprom_read_byte(&menu_shift[str + 1]) * 6) / 2 + 3, 127, 1, 0};
+		uint8_t param[] = {str, str, (66 - eeprom_read_byte(&menu_shift[str + 1]) * 3), 127, 1, 0};
 		written += word_out(param, &ret_arr[written + 5]) + 1;
 		str++;
 	}

@@ -30,66 +30,92 @@ uint8_t *alarm_lines[] = {alarm_menu_line1, alarm_menu_line2, alarm_menu_line1, 
 #define ALARM_MENU_LINE1_3_LEN  (sizeof(alarm_menu_line1)) / 2
 #define ALARM_MENU_LINE2_4_LEN  (sizeof(alarm_menu_line2)) / 2
 uint8_t alarm_menu_line_lengths[] = {ALARM_MENU_LINE1_3_LEN, ALARM_MENU_LINE2_4_LEN, ALARM_MENU_LINE1_3_LEN, ALARM_MENU_LINE2_4_LEN};
-uint8_t show_menu(){
+void show_menu(){
 	lcd_res();
-	if (menu == 2 || menu / 10 == 2){
-		word_out(param, date_str);
-		goto_page(3, 3);
-		goto_x(46, 127);
-		eep_str_write(ok, 2);
-		goto_page(3, 3);
-		goto_x(46 + 18, 127);
-		eep_str_write(res, 3);
-		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
-		return 0;
+	switch(menu){
+		case 21:
+		case 22:
+		case 23:
+		case 2:
+			word_out(param, date_str);
+			goto_page(3, 3);
+			goto_x(46, 127);
+			eep_str_write(ok, 2);
+			goto_page(3, 3);
+			goto_x(46 + 18, 127);
+			eep_str_write(res, 3);
+			cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
+		break;
+		case 31:
+		case 32:
+		case 33:
+		case 3:
+			for (uint8_t i = 0; i < 3; i++){
+				time_str[i * 3] = time[i] / 10 + '0';
+				time_str[i * 3 + 1] = time[i] % 10 + '0';
+			}
+			time_str[8] = '\0';
+			word_out(param, time_str);
+			goto_page(3, 3);
+			goto_x(46, 127);
+			eep_str_write(ok, 2);
+			goto_page(3, 3);
+			goto_x(46 + 18, 127);
+			eep_str_write(res, 3);
+			cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
+		break;
+		case 41:
+		case 42: 
+		case 43:
+		case 44:
+		case 45:
+		case 46:
+		case 47:
+		case 48:
+		case 49:
+		case 140:
+		case 141:
+		case 142:
+		case 143:
+		case 144:
+		case 145:
+		case 146:
+		case 147:
+		case 148:
+		case 149:
+		case 240:
+		case 241:
+		case 242:
+		case 4:
+			upd_alarm_str();
+			uint8_t alarm_param[] = {0, 0, (127 - 5 * 6 - 2 * 6 - 5 * 6) / 2, 127, 0};
+			word_out(alarm_param, alarm_str1);
+			
+			alarm_param[0] = 4;
+			alarm_param[1] = 4;
+			
+			word_out(alarm_param, alarm_str2);
+			
+			alarm_param[0] = 0;
+			alarm_param[1] = 0;
+			
+			goto_page(6, 6);
+			goto_x((127 - 120) / 2, 127);
+			eep_str_write(dow, 20);
+			goto_page(2, 2);
+			goto_x((127 - 120) / 2, 127);
+			eep_str_write(dow, 20);
+			
+			goto_page(0,0);
+			goto_x(27 + 30 + 6, 127);
+			eep_str_write(on_off, 6);
+			goto_page(4, 4);
+			goto_x(27 + 30 + 6, 127);
+			eep_str_write(on_off, 6);
+			
+			cursor_v(0, alarm_lines, 1, 2 * (ALARM_MENU_LINE1_3_LEN + ALARM_MENU_LINE2_4_LEN), alarm_menu_line_lengths);
+		break;
 	}
-	if (menu == 3 || menu / 10 == 3){
-		for (uint8_t i = 0; i < 3; i++){
-			time_str[i * 3] = time[i] / 10 + '0';
-			time_str[i * 3 + 1] = time[i] % 10 + '0';
-		}
-		time_str[8] = '\0';
-		word_out(param, time_str);
-		goto_page(3, 3);
-		goto_x(46, 127);
-		eep_str_write(ok, 2);
-		goto_page(3, 3);
-		goto_x(46 + 18, 127);
-		eep_str_write(res, 3);
-		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
-		return 0;
-	}
-	if (menu == 4 || menu / 10 % 10 == 4){
-		upd_alarm_str();
-		uint8_t alarm_param[] = {0, 0, (127 - 5 * 6 - 2 * 6 - 5 * 6) / 2, 127, 0};
-		word_out(alarm_param, alarm_str1);
-		
-		alarm_param[0] = 4;
-		alarm_param[1] = 4;
-		
-		word_out(alarm_param, alarm_str2);
-		
-		alarm_param[0] = 0;
-		alarm_param[1] = 0;
-		
-		goto_page(6, 6);
-		goto_x((127 - 120) / 2, 127);
-		eep_str_write(dow, 20);
-		goto_page(2, 2);
-		goto_x((127 - 120) / 2, 127);
-		eep_str_write(dow, 20);
-		
-		goto_page(0,0);
-		goto_x(27 + 30 + 6, 127);
-		eep_str_write(on_off, 6);
-		goto_page(4, 4);
-		goto_x(27 + 30 + 6, 127);
-		eep_str_write(on_off, 6);
-		
-		cursor_v(0, alarm_lines, 1, 2 * (ALARM_MENU_LINE1_3_LEN + ALARM_MENU_LINE2_4_LEN), alarm_menu_line_lengths);
-		return 0;
-	}
-	return 1;
 }
 void up_long(){
 	
@@ -105,24 +131,24 @@ void up_short(){
 		case 21:
 			date_temp[1]++;
 			check_day_correct();
-			date_str[0] = date_temp[1] / 10 + '0';
-			date_str[1] = date_temp[1] % 10 + '0';
+			//date_str[0] = date_temp[1] / 10 + '0';
+			//date_str[1] = date_temp[1] % 10 + '0';
 		break;
 		case 22:
 			if (date_temp[2] < 12)
 				date_temp[2]++;
 			else
 				date_temp[2] = 1;
-			date_str[3] = date_temp[2] / 10 + '0';
-			date_str[4] = date_temp[2] % 10 + '0';
+			//date_str[3] = date_temp[2] / 10 + '0';
+			//date_str[4] = date_temp[2] % 10 + '0';
 		break;
 		case 23:
 			if (date_temp[3] < 99)
 				date_temp[3]++;
 			else
 				date_temp[3] = 0;
-			date_str[6] = date_temp[3] / 10 + '0';
-			date_str[7] = date_temp[3] % 10 + '0';
+			//date_str[6] = date_temp[3] / 10 + '0';
+			//date_str[7] = date_temp[3] % 10 + '0';
 		break;
 		case 3:
 			cursor_v(1, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
@@ -132,34 +158,36 @@ void up_short(){
 				time_temp[0]++;
 			else
 				time_temp[0] = 0;
-			time_str[0] = time_temp[0] / 10 + '0';
-			time_str[1] = time_temp[0] % 10 + '0';
+			//time_str[0] = time_temp[0] / 10 + '0';
+			//time_str[1] = time_temp[0] % 10 + '0';
 		break;
 		case 32:
 			if (time_temp[1] < 59)
 				time_temp[1]++;
 			else
 				time_temp[1] = 0;
-			time_str[3] = time_temp[1] / 10 + '0';
-			time_str[4] = time_temp[1] % 10 + '0';
+			//time_str[3] = time_temp[1] / 10 + '0';
+			//time_str[4] = time_temp[1] % 10 + '0';
 		break;
 		case 33:
 			if (time_temp[2] < 59)
 				time_temp[2]++;
 			else
 				time_temp[2] = 0;
-			time_str[6] = time_temp[2] / 10 + '0';
-			time_str[7] = time_temp[2] % 10 + '0';
+			//time_str[6] = time_temp[2] / 10 + '0';
+			//time_str[7] = time_temp[2] % 10 + '0';
 		break;
 		case 4:
 			cursor_v(1, alarm_lines, 1, 2 * (ALARM_MENU_LINE1_3_LEN + ALARM_MENU_LINE2_4_LEN), alarm_menu_line_lengths);
 		break;
 	}
 	if (menu / 10 == 2){
+		tempDate_str();
 		word_out(param, date_str);
 		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 	}
 	if (menu / 10 == 3){
+		tempTime_str();
 		word_out(param, time_str);
 		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 	}
@@ -207,55 +235,57 @@ void dn_short(){
 		case 21:
 			date_temp[1]--;
 			check_day_correct();
-			date_str[0] = date_temp[1] / 10 + '0';
-			date_str[1] = date_temp[1] % 10 + '0';
+			//date_str[0] = date_temp[1] / 10 + '0';
+			//date_str[1] = date_temp[1] % 10 + '0';
 		break;
 		case 22:
 			if (date_temp[2] > 1)
 				date_temp[2]--;
 			else
 				date_temp[2] = 12;
-			date_str[3] = date_temp[2] / 10 + '0';
-			date_str[4] = date_temp[2] % 10 + '0';
+			//date_str[3] = date_temp[2] / 10 + '0';
+			//date_str[4] = date_temp[2] % 10 + '0';
 		break;
 		case 23:
 			if (date_temp[3] > 0)
 				date_temp[3]--;
 			else
 				date_temp[3] = 99;
-			date_str[6] = date_temp[3] / 10 + '0';
-			date_str[7] = date_temp[3] % 10 + '0';
+			//date_str[6] = date_temp[3] / 10 + '0';
+			//date_str[7] = date_temp[3] % 10 + '0';
 		break;
 		case 31:
 			if (time_temp[0] > 0)
 				time_temp[0]--;
 			else
 				time_temp[2] = 23;
-			time_str[0] = time_temp[0] / 10 + '0';
-			time_str[1] = time_temp[0] % 10 + '0';
+			//time_str[0] = time_temp[0] / 10 + '0';
+			//time_str[1] = time_temp[0] % 10 + '0';
 		break;
 		case 32:
 			if (time_temp[1] > 0)
 				time_temp[1]--;
 			else
 				time_temp[1] = 59;
-			time_str[3] = time_temp[1] / 10 + '0';
-			time_str[4] = time_temp[1] % 10 + '0';
+			//time_str[3] = time_temp[1] / 10 + '0';
+			//time_str[4] = time_temp[1] % 10 + '0';
 		break;
 		case 33:
 			if (time_temp[2] > 0)
 				time_temp[2]--;
 			else
 				time_temp[2] = 59;
-			time_str[6] = time_temp[2] / 10 + '0';
-			time_str[7] = time_temp[2] % 10 + '0';
+			//time_str[6] = time_temp[2] / 10 + '0';
+			//time_str[7] = time_temp[2] % 10 + '0';
 		break;
 	}
 	if (menu / 10 == 2){
+		tempDate_str();
 		word_out(param, date_str);
 		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 	}
 	if (menu / 10 == 3){
+		tempTime_str();
 		word_out(param, time_str);
 		cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 	}
@@ -338,12 +368,42 @@ void ok_short(){
 		case 21:
 		case 22:
 		case 23:
-		menu = 2;
+			menu = 2;
 		break;
 		case 31:
 		case 32:
 		case 33:
-		menu = 3;
+			menu = 3;
+		break;
+		case 4:
+			if (prev_menu == 1)
+				upd_alarm_str();
+			menu = 100 + cursor_v_pos;
+			apply_changes();
+		break;
+		case 41:
+		case 42:
+		case 43:
+		case 44:
+		case 45:
+		case 46:
+		case 47:
+		case 48:
+		case 49:
+		case 140:
+		case 141:
+		case 142:
+		case 143:
+		case 144:
+		case 145:
+		case 146:
+		case 147:
+		case 148:
+		case 149:
+		case 240:
+		case 241:
+		case 242:
+			menu = 4;
 		break;
 	}
 	prev_menu = menu;

@@ -1,7 +1,7 @@
 /*Will be moved to minilib.h*/
 /*50 kHz I2C*/
 #define F_CPU 1000000
-#include <avr/io.h>
+//#include <avr/io.h>
 #include <util/delay.h>
 #include <avr/eeprom.h>
 #include <avr/interrupt.h>
@@ -83,34 +83,78 @@ uint8_t alarm1_temp[3] = {12, 0, 4};
 uint8_t alarm2_temp[3] = {12, 0, 4};
 uint8_t alarm_str1[] = "hh:mm\0";
 uint8_t alarm_str2[] = "hh:mm\0";
+uint8_t alarm2_img[] EEMEM = {
+	0x00, 0x1C, //            ###
+	0x87, 0xD2, // #    ##### #  #
+	0xC9, 0x2A, // ##  #  #  # # #
+	0xF0, 0x16, // ####       # ##
+	0x69, 0x28, //  ## #  #  # #
+	0x41, 0x04, //  #     #     #
+	0x41, 0x04, //  #     #     #
+	0x61, 0xF4, //  ##    ##### #
+	0x40, 0x04, //  #           #
+	0xCE, 0x04, // ##  ###      #
+	0xAB, 0x28, // # # # ##  # #
+	0x95, 0x16, // #  # # #   # ##
+	0xAD, 0x2A, // # # ## #  # # #
+	0xB3, 0xD2, // # ##  #### #  #
+	0xEE, 0x1C, // ### ###    ###
+};
+uint8_t alarm1_img[] EEMEM = {
+	0x00, 0x1C, //            ###
+	0x87, 0xD2, // #    ##### #  #
+	0xC9, 0x2A, // ##  #  #  # # #
+	0xF0, 0x16, // ####       # ##
+	0x69, 0x28, //  ## #  #  # #
+	0x41, 0x04, //  #     #     #
+	0x41, 0x04, //  #     #     #
+	0x61, 0xF4, //  ##    ##### #
+	0x40, 0x04, //  #           #
+	0x40, 0x04, //  #           #
+	0xEE, 0x28, // ### ###   # #
+	0xBB, 0x16, // # ### ##   # ##
+	0x81, 0x2A, // #      #  # # #
+	0xBF, 0xD2, // # ######## #  #
+	0xE0, 0x1C, // ###        ###
+};
 uint8_t status = 0; //Status reg:
 /*
 0 bit -> when minutes changed. I'm using that to redraw digits on the main screen. Resets in draw_big_digit function
 1 bit -> alarm 1 set
 2 bit -> alarm 2 set
 3 bit -> UART flag
+4 bit -> alarm 1 stopped
+5 bit -> alarm 2 stopped
 */
 #define UART_FLAG status & 0x08
 #define UART_FLAG_SET status |= 0x08
 #define UART_FLAG_RESET status &= ~0x08
-void UART_SendChar(u_char sym)
-{
+void UART_SendChar(u_char sym){
 	UDR = sym;
 	while(!(UCSRA & (1 << UDRE)));
+}
+void send_sp(){
+	uint16_t * s = SP;
+	UART_SendChar(((uint16_t)s) / 1000 + '0');
+	UART_SendChar(((uint16_t)s) % 1000 / 100 + '0');
+	UART_SendChar(((uint16_t)s) % 100 / 10 + '0');
+	UART_SendChar(((uint16_t)s) % 10 + '0');
+	UART_SendChar('\n');
+	UART_SendChar('\r');
 }
 void shiftout(uint8_t type, uint8_t data){ //type: 0 goes for data, 1 goes for command
 	cli();
 	if (!type)
-	PORTD |= 0b01000000;
+		PORTD |= 0b01000000;
 	else
-	PORTD &= 0b10111111;
+		PORTD &= 0b10111111;
 	
 	PORTD |= 0b00100000;
 	PORTD &= 0b11011111;
 	for(uint8_t i = 0; i < 8; i++){
 		if (data & 0b10000000){
 			PORTD |= 0b01000000;
-			} else {
+		} else {
 			PORTD &= 0b10111111;
 		}
 		PORTD |= 0b00100000;
@@ -276,9 +320,22 @@ void ds3231_read_time(){
 	*(time + 1) = ((ret_arr[1] & 0x70) >> 4) * 10 + (ret_arr[1] & 0x0F);
 	*time = ((ret_arr[2] & 0x30) >> 4) * 10 + (ret_arr[2] & 0x0F);
 }
+void update_time_str(){
+	for (uint8_t i = 0; i < 3; i++){
+		time_str[i * 3] = time[i] / 10 + '0';
+		time_str[i * 3 + 1] = time[i] % 10 + '0';
+	}
+}
 void ds3231_write_time(uint8_t hours, uint8_t minutes, uint8_t seconds){
 	uint8_t temparr[] = {ds3231_byte(seconds), ds3231_byte(minutes), ds3231_byte(hours)};
 	i2c_send_arr(DS_ADDR, DS3231_SECONDS, temparr, 3);
+}
+void update_date_str(){
+	for (uint8_t i = 0; i < 3; i++){
+		date_str[i * 3] = date[1 + i] / 10 + '0';
+		date_str[i * 3 + 1] = date[1 + i] % 10 + '0';
+	}
+	//date_str[8] = '\0';
 }
 void ds3231_read_date(){
 	i2c_read_arr(DS_ADDR, (0x1000 | DS3231_DAY), 4);
@@ -286,14 +343,18 @@ void ds3231_read_date(){
 	date[1] = (ret_arr[1] & 0x0F) + (ret_arr[1] >> 4) * 10;
 	date[2] = ((ret_arr[2] & 0x10) >> 4) * 10 + (ret_arr[2] & 0x0F);
 	date[3] = (ret_arr[3] >> 4) * 10 + (ret_arr[3] & 0x0F);
-	for (uint8_t i = 0; i < 3; i++){
-		date_str[i * 3] = date[1 + i] / 10 + '0';
-		date_str[i * 3 + 1] = date[1 + i] % 10 + '0';
-	}
-	date_str[8] = '\0';
+	update_date_str();
 }
-void ds3231_write_date(uint8_t date, uint8_t day, uint8_t month, uint8_t year){
-	uint8_t temparr[] = {ds3231_byte(date), ds3231_byte(day), ds3231_byte(month), ds3231_byte(year)};
+void ds3231_write_date(uint8_t day, uint8_t month, uint8_t year){
+	uint8_t a = (14 - date[2]) / 12;
+	uint16_t y = 2000 + date[3] - a;
+	uint8_t m = date[2] + 12 * a - 2;
+	date[0] = (date[1] + y + y / 4 - y / 100 + y / 400 + 31 * m / 12) % 7;
+	if (date[0])
+		date[0]--;
+	else
+		date[0] = 6;
+	uint8_t temparr[] = {ds3231_byte(date[0]), ds3231_byte(day), ds3231_byte(month), ds3231_byte(year)};
 	i2c_send_arr(DS_ADDR, DS3231_DAY, temparr, 4);
 }
 /*Display reset*/
@@ -385,12 +446,36 @@ uint8_t word_out(uint8_t *param, u_char *input){
 	}
 	return symbols;
 }
-void fill_column(uint8_t x_coord, uint8_t page_st, uint8_t page_end, uint8_t width, uint8_t type) {
+static void fill_column(uint8_t x_coord, uint8_t page_st, uint8_t page_end, uint8_t width, uint8_t type) {
 	goto_x(x_coord, x_coord + width);
 	goto_page(page_st, page_end);
 	for (uint8_t i = 0; i <= width * 6; i++) shiftout(DATA, type);
 }
-void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
+void draw_alarms(){
+	if (eeprom_read_byte(alarm1 + 2) & 0x80){
+		goto_page(6, 7);
+		goto_x(0, 14);
+		for (uint8_t i = 0; i < 30; i++){
+			if (i < 15){
+				shiftout(DATA, eeprom_read_byte(alarm1_img + i * 2 + 1));
+				} else {
+				shiftout(DATA, eeprom_read_byte(alarm1_img + (i - 15) * 2));
+			}
+		}
+	}
+	if (eeprom_read_byte(alarm2 + 2) & 0x80){
+		goto_page(6, 7);
+		goto_x(16, 30);
+		for (uint8_t i = 0; i < 30; i++){
+			if (i < 15){
+				shiftout(DATA, eeprom_read_byte(alarm2_img + i * 2 + 1));
+				} else {
+				shiftout(DATA, eeprom_read_byte(alarm2_img + (i - 15) * 2));
+			}
+		}
+	}
+}
+static void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
 	uint8_t space = 0;
 	if (num < 10){
 		if (num == 1){
@@ -422,28 +507,69 @@ void comp_date(){
 		date_temp[i] = date[i];
 	}
 }
+void tempDate_str(){
+	for (uint8_t i = 0; i < 3; i++){
+		date_str[i * 3] = date_temp[1 + i] / 10 + '0';
+		date_str[i * 3 + 1] = date_temp[1 + i] % 10 + '0';
+	}
+}
+void tempTime_str(){
+	for (uint8_t i = 0; i < 3; i++){
+		time_str[i * 3] = time_temp[i] / 10 + '0';
+		time_str[i * 3 + 1] = time_temp[i] % 10 + '0';
+	}
+}
 void comp_time(){
 	for(uint8_t i = 0; i < 3; i++){
 		time_temp[i] = time[i];
 	}
 }
-void upd_alarm_str(){
+void upd_alarm_str(uint8_t num){
 	for (uint8_t i = 0; i < 2; i++){
-		alarm_str1[i * 3] = eeprom_read_byte(alarm1 + i) / 10 + '0';
-		alarm_str1[i * 3 + 1] =  eeprom_read_byte(alarm1 + i) % 10 + '0';
-		alarm_str2[i * 3] =  eeprom_read_byte(alarm2 + i) / 10 + '0';
-		alarm_str2[i * 3 + 1] =  eeprom_read_byte(alarm2 + i) % 10 + '0';
-		alarm1_temp[i] = eeprom_read_byte(alarm1 + i);
-		alarm2_temp[i] = eeprom_read_byte(alarm2 + i);
+		if (num & 1){
+			alarm_str1[i * 3] = eeprom_read_byte(alarm1 + i) / 10 + '0';
+			alarm_str1[i * 3 + 1] =  eeprom_read_byte(alarm1 + i) % 10 + '0';
+			alarm1_temp[i] = eeprom_read_byte(alarm1 + i);
+		}
+		if (num & 2){
+			alarm_str2[i * 3] =  eeprom_read_byte(alarm2 + i) / 10 + '0';
+			alarm_str2[i * 3 + 1] =  eeprom_read_byte(alarm2 + i) % 10 + '0';
+			alarm2_temp[i] = eeprom_read_byte(alarm2 + i);
+		}
+	}
+	alarm1_temp[2] = eeprom_read_byte(alarm1 + 2);
+	alarm2_temp[2] = eeprom_read_byte(alarm2 + 2);
+}
+void alarmTemp_str(){
+	for (uint8_t i = 0; i < 2; i++){
+			alarm_str1[i * 3] = alarm1_temp[i] / 10 + '0';
+			alarm_str1[i * 3 + 1] =  alarm1_temp[i] % 10 + '0';
+			alarm_str2[i * 3] =  alarm2_temp[i] / 10 + '0';
+			alarm_str2[i * 3 + 1] =  alarm2_temp[i] % 10 + '0';
+	}
+}
+void alarm_set_reset(uint8_t num, uint8_t sres){
+	if (num == 1){
+		if (sres)
+			alarm1_temp[2] |= 0x80;
+		else
+			alarm1_temp[2] &= ~0x80;
+		eeprom_update_block(alarm1_temp, alarm1, 3);
+	} else {
+		if (sres)
+			alarm2_temp[2] |= 0x80;
+		else
+			alarm2_temp[2] &= ~0x80;
+		eeprom_update_block(alarm2_temp, alarm2, 3);
 	}
 }
 /*Displays time*/
 void display_time(){
-	draw_big_digit(time[0] / 10, 1, 6);
-	draw_big_digit(time[0] % 10, 1, 34);
-	draw_big_digit(10, 1, 65);
-	draw_big_digit(time[1] / 10, 1, 70);
-	draw_big_digit(time[1] % 10, 1, 98);
+	draw_big_digit(time[0] / 10, 0, 6);
+	draw_big_digit(time[0] % 10, 0, 34);
+	draw_big_digit(10, 0, 65);
+	draw_big_digit(time[1] / 10, 0, 70);
+	draw_big_digit(time[1] % 10, 0, 98);
 	status &= ~0x01;
 }
 void display_date(){
@@ -468,13 +594,11 @@ void cursor_h(uint8_t upd){
 			break;
 	}
 	uint8_t param[] = {cursor_horiz, cursor_horiz, 0, 10, 1};
-	u_char pointer[] = ">\0";
-	word_out(param, pointer);	
+	word_out(param,(u_char*)  ">\0");	
 	if(upd){
 		param[0] = rem_pos;
 		param[1] = rem_pos;
-		u_char null[] = " \0";
-		word_out(param, null);
+		word_out(param, (u_char*) " \0");
 	}
 }
 uint8_t cursor_v_pos = 0;
@@ -484,7 +608,10 @@ void check_day_correct(){
 			if (!date_temp[1]) date_temp[1] = 31;
 		} else {
 			if (date_temp[2] == 2){
-				if ((((date_temp[3] + 2000) % 100) && !((date_temp[3] + 2000) % 4)) || !((date_temp[3] + 2000) % 400)){
+				//if ((((date_temp[3] + 2000) % 100) && !((date_temp[3] + 2000) % 4)) || !((date_temp[3] + 2000) % 400)){
+				/*Truly check for year
+				lite version - till year 2099*/
+				if (!(date_temp[3] % 4)){
 					if (date_temp[1] > 29) date_temp[1] = 1;
 					if (!date_temp[1]) date_temp[1] = 29;
 				} else {
@@ -497,31 +624,16 @@ void check_day_correct(){
 			}
 		}
 }
-void draw_cursor(uint8_t cursor_pos_t, uint8_t** lines, uint8_t* line_lengths, uint8_t page_st, uint8_t fill){
+static void draw_cursor(uint8_t cursor_pos_t, uint8_t** lines, uint8_t* line_lengths, uint8_t page_st, uint8_t fill){
 	uint8_t i = 0;
 	while(cursor_pos_t >= *(line_lengths + i)){
 		cursor_pos_t -= *(line_lengths + i);
 		i++;
 	}
-	UART_SendChar('i');
-	UART_SendChar(i / 10 + '0');
-	UART_SendChar(i % 10 + '0');
-	UART_SendChar('\n');
-	UART_SendChar('\r');
-	/*if (i >= 2) {
-		cursor_pos_t += *(line_lengths + i);
-		i--;
-	}*/
 	uint8_t temp_sum = 0;
 	for (uint8_t j = 0; j <= cursor_pos_t * 2; j++){
 		temp_sum += *(*(lines + i) + j);
 	}
-	UART_SendChar('t');
-	UART_SendChar(temp_sum / 100 + '0');
-	UART_SendChar(temp_sum % 100 / 10 + '0');
-	UART_SendChar(temp_sum % 10 + '0');
-	UART_SendChar('\n');
-	UART_SendChar('\r');
 	fill_column(temp_sum, page_st + i * 2, page_st + i * 2, *(*(lines + i) + cursor_pos_t * 2 + 1), fill);
 }
 /*Rules cursor in vertical mode*/
@@ -573,7 +685,7 @@ void show_menus(){
 	uint8_t written = 0;
 	uint8_t str = 0;
 	while(str < sizeof(menu_shift) - 1){
-		uint8_t param[] = {str, str, (127 - eeprom_read_byte(&menu_shift[str + 1]) * 6) / 2 + 3, 127, 1, 0};
+		uint8_t param[] = {str, str, (66 - eeprom_read_byte(&menu_shift[str + 1]) * 3), 127, 1, 0};
 		written += word_out(param, &ret_arr[written + 5]) + 1;
 		str++;
 	}

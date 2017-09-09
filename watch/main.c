@@ -1,10 +1,11 @@
-#include </avr_git/watch/minilib/minilib/library.c>
+#include </avr_git/watch/minilib/minilib/library.h>
 
 #define DEL 30
 #define WAIT 10
 #define MENU_LENGTH 5
 uint8_t delay = DEL;
 uint8_t state = 0x00;
+static uint8_t statef = 0;
 uint8_t bt_wait = WAIT;
 uint8_t menu = 0;
 uint8_t bt_wait_sel_u = WAIT;
@@ -12,12 +13,14 @@ uint8_t bt_wait_sel_d = WAIT;
 uint8_t UART_cond = 0;
 uint16_t addr = 0;
 uint8_t shift = 8;
+static uint8_t prev_menu = 0;
+static uint8_t isr_count = 0;
 uint8_t UART_arr[32];
 uint8_t UART_pointer = 0;
 uint8_t date_menu_line1[] = {41, 12, 6, 12, 6, 12};
 uint8_t date_menu_line2[] = {46, 12, 6, 18};
 uint8_t *lines[] = {date_menu_line1, date_menu_line2};
-uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127, 0};
+uint8_t param[] = {1, 1, 127 / 2 - 7 * 3, 127};
 #define DATE_TIME_MENU_LINE1_LEN  (sizeof(date_menu_line1)) / 2
 #define DATE_TIME_MENU_LINE2_LEN  (sizeof(date_menu_line2)) / 2
 uint8_t date_time_menu_line_lengths[] = {DATE_TIME_MENU_LINE1_LEN, DATE_TIME_MENU_LINE2_LEN};
@@ -27,13 +30,23 @@ uint8_t *alarm_lines[] = {alarm_menu_line1, alarm_menu_line2, alarm_menu_line1, 
 #define ALARM_MENU_LINE1_3_LEN  (sizeof(alarm_menu_line1)) / 2
 #define ALARM_MENU_LINE2_4_LEN  (sizeof(alarm_menu_line2)) / 2
 uint8_t alarm_menu_line_lengths[] = {ALARM_MENU_LINE1_3_LEN, ALARM_MENU_LINE2_4_LEN, ALARM_MENU_LINE1_3_LEN, ALARM_MENU_LINE2_4_LEN};
-uint8_t alarm_param[] = {0, 0, (127 - 5 * 6 - 2 * 6 - 5 * 6) / 2, 127, 0};
+uint8_t alarm_param[] = {0, 0, (127 - 5 * 6 - 2 * 6 - 5 * 6) / 2, 127};
+uint8_t file;
+uint8_t pages[40];
+uint8_t pages_pointer;
+uint8_t scroll;
+#define HEADER_LEN 20
+#define RECORD_START 3000
+#define RECORD_LENGTH 1000
+uint16_t record_cell_len[8] EEMEM;
+uint8_t record_num EEMEM;
+uint16_t file_offset;
 static void alarm_stop(){
-	status |= 0x18;
+	status |= 0x30;
 	TCCR1B = 0x00;
 }
 static void alarm_cont(){
-	status &= ~0x18;
+	status &= ~0x30;
 }
 static void alarm_day_selection(){
 	for (uint8_t i = 0; i < 7; i++){
@@ -86,9 +99,22 @@ static void useful_out(){
 		cursor_v(0, alarm_lines, 1, 2 * (ALARM_MENU_LINE1_3_LEN + ALARM_MENU_LINE2_4_LEN), alarm_menu_line_lengths);
 	}
 }
-static void show_menu(){
+//returns how many symbols was written on lcd
+static uint8_t read_page(){
+	UART_SendChar(pages_pointer & 0x7F);
 	lcd_res();
-	switch(menu){
+	file_offset = 0;
+	for (uint8_t i = 0; i < (pages_pointer & 0x7F); i++)
+		file_offset += pages[i];
+	i2c_read_arr(EEP_ADDR, RECORD_START + file * RECORD_LENGTH - 5 + HEADER_LEN + file_offset, 174);
+	ret_arr[175] = '\0';
+	uint8_t temp_param[] = {0, 7, 0, 127};
+	return word_out(temp_param, &ret_arr[5]);
+}
+inline static void show_menu(){
+	lcd_res();
+	switch(menu){	
+		//date menu part
 		case 21:
 		case 22:
 		case 23:
@@ -97,27 +123,23 @@ static void show_menu(){
 			word_out(param, date_str);
 			goto_page(3, 3);
 			goto_x(46, 127);
-			eep_str_write(ok, 2);
-			goto_page(3, 3);
-			goto_x(46 + 18, 127);
-			eep_str_write(res, 3);
+			eep_str_write(ok_res, 6);
 			cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 		break;
+		//time menu part
 		case 31:
 		case 32:
 		case 33:
 		case 3:
 			comp_time();
-			update_time_str();
+			tempTime_str();
 			word_out(param, time_str);
 			goto_page(3, 3);
 			goto_x(46, 127);
-			eep_str_write(ok, 2);
-			goto_page(3, 3);
-			goto_x(46 + 18, 127);
-			eep_str_write(res, 3);
+			eep_str_write(ok_res, 6);
 			cursor_v(0, lines, 2, DATE_TIME_MENU_LINE1_LEN + DATE_TIME_MENU_LINE2_LEN, date_time_menu_line_lengths);
 		break;
+		//alarms part
 		case 100:
 		case 101:
 		case 102:
@@ -146,26 +168,38 @@ static void show_menu(){
 			eep_str_write(dow, 20);
 			
 			goto_page(0,0);
-			goto_x(27 + 30 + 6, 127);
+			goto_x(27 + 30 + 6, 27 + 71);
 			eep_str_write(on_off, 6);
 			goto_page(4, 4);
-			goto_x(27 + 30 + 6, 127);
 			eep_str_write(on_off, 6);
 			
 			cursor_v(0, alarm_lines, 1, 2 * (ALARM_MENU_LINE1_3_LEN + ALARM_MENU_LINE2_4_LEN), alarm_menu_line_lengths);
 			alarm_day_selection();
 		break;
+		//a reading menu
 		case 6:;
-	/*	char str[] = "это лайт чек на пере нос\0";
-		uint8_t n_p[] = {0,7,0,127,1};
-		word_out(n_p, (u_char*) str);*/
+			uint8_t i = 0;
+			while (i < eeprom_read_byte(&record_num)){
+				cli();
+				i2c_read_arr(EEP_ADDR, RECORD_START + (i * RECORD_LENGTH) - 5, HEADER_LEN + 5);
+				ret_arr[24] = 0;
+				uint8_t temp_param[] = {i , i, 9, 127};
+				word_out(temp_param, &ret_arr[5]);
+				sei();
+				i++;
+			}
+			cursor_horiz = 0;
+			cursor_h(NOSTEP);
+		break;
+		case 60:;
+			pages_pointer = 0;
+			uint8_t readed = read_page();
+			pages_pointer++;
+			pages[pages_pointer] = readed;
 		break;
 	}
 }
-static void up_long(){
-	
-}
-static void up_short(){
+inline static void up_short(){
 	switch(menu){
 		case 1:
 			cursor_h(1);
@@ -236,11 +270,26 @@ static void up_short(){
 			else
 				alarm2_temp[1] = 0;
 		break;
+		case 6:
+			cursor_h(UP);
+		break;
+		case 60:
+			if (scroll){
+				if (pages_pointer > 1)
+					pages_pointer -= 2;
+				else
+					if (pages_pointer)
+						pages_pointer--;
+			} else
+				if (pages_pointer)
+					pages_pointer--;
+			read_page();
+			scroll = 0;
+		break;
 	}
 	useful_out();
 }
-static uint8_t statef = 0;
-static void up_button(){
+inline static void up_button(){
 	if (!(PIND & 8)){
 		statef |= 0x10;
 		if (!(statef & 0x20)){
@@ -257,10 +306,7 @@ static void up_button(){
 			}
 		}
 }
-static void dn_long(){
-
-}
-static void dn_short(){
+inline static void dn_short(){
 	switch(menu){
 		case 1:
 			cursor_h(2);
@@ -293,7 +339,7 @@ static void dn_short(){
 			if (time_temp[0] > 0)
 				time_temp[0]--;
 			else
-				time_temp[2] = 23;
+				time_temp[0] = 23;
 		break;
 		case 32:
 			if (time_temp[1] > 0)
@@ -331,10 +377,29 @@ static void dn_short(){
 			else
 				alarm2_temp[1] = 59;
 		break;
+		case 6:
+			cursor_h(DOWN);
+		break;
+		case 60:;
+			file_offset += 2;
+			uint16_t tempsize = eeprom_read_word(&(record_cell_len[file]));
+			if (scroll == 0){
+				if (file_offset < tempsize)
+				pages_pointer++;
+			}
+			uint8_t readed = read_page();
+			pages[pages_pointer] = readed;
+			//UART_SendChar(pages_pointer);
+			if (file_offset < tempsize)
+				pages_pointer++;
+			//UART_SendChar(pages_pointer);
+			scroll = 1;
+			file_offset -= 2;
+		break;
 	}
 	useful_out();
 }
-static void dn_button(){
+inline static void dn_button(){
 		if (!(PIND & 4)){
 			statef |= 0x40;
 			if (!(statef & 0x80)){
@@ -351,16 +416,16 @@ static void dn_button(){
 			}
 		}
 }
-static void apply_changes(){
+inline static void apply_changes(){
 	switch (menu){
 		case 24:
-			ds3231_write_date(date_temp[1], date_temp[2], date_temp[3]);
+			ds3231_write_date();
 			ds3231_read_date();
 			menu = 2;
 		break;
 		case 25:
 			comp_date();
-			update_date_str();
+			tempDate_str();
 			shiftout(DATA, 0x00); // why?
 			menu = 2;
 			show_menu();
@@ -372,7 +437,7 @@ static void apply_changes(){
 		break;
 		case 35:
 			comp_time();
-			update_time_str();
+			tempTime_str();
 			shiftout(DATA, 0x00); // why?
 			menu = 3;
 			show_menu();
@@ -401,16 +466,14 @@ static void apply_changes(){
 		break;
 	}
 }
-static uint8_t prev_menu = 0;
-static void ok_short(){
+inline static void ok_short(){
 	alarm_stop();
 	switch(menu){
 		case 0:
 			if(!delay)
 				lcd_res();
 			delay = DEL;
-			display_time();
-			display_date();
+			display_time_date();
 			draw_alarms();
 		break;
 		case 1:
@@ -444,7 +507,7 @@ static void ok_short(){
 		case 4:
 			if (prev_menu == 1)
 				upd_alarm_str(3);
-			if (cursor_v_pos < 4 || (cursor_v_pos > 11 && cursor_v_pos < 15))
+			if (cursor_v_pos < 4 || (cursor_v_pos > 10 && cursor_v_pos < 15))
 				menu = 100 + cursor_v_pos;
 			else
 				set_alarm_day();
@@ -457,10 +520,19 @@ static void ok_short(){
 		case 112:
 			menu = 4;
 		break;
+		case 6:
+			file = cursor_horiz;
+			menu = 60;
+			lcd_res();
+			pages_pointer = 0;
+			pages[0] = read_page();
+			scroll = 1;
+			pages_pointer = 1;
+		break;
 	}
 	prev_menu = menu;
 }
-static void ok_long(){
+inline static void ok_long(){
 	switch(menu){
 		case 0:
 			menu = 1;
@@ -490,13 +562,8 @@ static void ok_long(){
 		break;
 		case 3:
 			ds3231_read_time();
-			menu = 1;
-			cursor_v_pos = 0;
-			shiftout(DATA, 0x00); // doesn't work without it - why?
-			lcd_res();
-			show_menus();
-			cursor_h(0);
-		break;
+		case 5:
+		case 6:
 		case 4:
 			menu = 1;
 			shiftout(DATA, 0x00); // doesn't work without it - why?
@@ -515,9 +582,17 @@ static void ok_long(){
 		case 112:
 			menu = 4;
 		break;
+		case 60:
+			menu = 6;
+			shiftout(DATA, 0x00); // doesn't work without it - why?
+			cursor_v_pos = 0;
+			lcd_res();
+			show_menu();
+			cursor_h(0);
+		break;
 	}
 }
-static void ok_button(){
+inline static void ok_button(){
 	if (!(PIND & 16)){
 		state |= 0x02;
 		if (!(state & 0x01)){
@@ -542,29 +617,30 @@ static void alarm_start(){
 	if ((eeprom_read_byte(alarm1 + 2) & 0x80 && (eeprom_read_byte(alarm1 + 2) & 1 << date[0])) || (eeprom_read_byte(alarm2 + 2) & 0x80 && (eeprom_read_byte(alarm2 + 2) & 1 << date[0]))) {
 		//UART_SendChar(eeprom_read_byte(alarm1 + 2) & 1 << date[0]);
 		if ((eeprom_read_byte(alarm1) == time[0] && eeprom_read_byte(alarm1 + 1) == time[1]) || (eeprom_read_byte(alarm2) == time[0] && eeprom_read_byte(alarm2 + 1) == time[1]))
-			if (!(status & 0x18)){
+			if (!(status & 0x30)){
 				TCCR1B = 0x03;
 			}
 	}
 }
-static uint8_t isr_count = 0;
 /*So I discovered that I need something to do with more less freq that isr does*/
+uint16_t* record_length_pointer; 
 ISR(TIMER0_OVF_vect){
+	//UART_SendStr((u_char*)"What\0");
 	//sleep_disable(); how it's even work?
 	TCCR0 = 0x00;
 	sei();
 	//PORTB^=0x01;
 	if (UART_FLAG){
-		if(!i2c_send_arr(EEP_ADDR, addr, UART_arr, UART_pointer)){
-			UART_SendChar('O');
-			UART_SendChar('K');
-		}
+		if (record_length_pointer == NULL)
+			record_length_pointer = &(record_cell_len[(addr - RECORD_START) / RECORD_LENGTH]);
+			i2c_send_arr(EEP_ADDR, addr, UART_arr, UART_pointer);
+			eeprom_write_word(record_length_pointer, eeprom_read_word(record_length_pointer) + UART_pointer);
+			UART_SendStr((u_char *)"OK\0");
+			if (UART_FLAG_FULL_FILE_SET){
+				record_length_pointer = NULL;
+				eeprom_write_byte(&record_num, eeprom_read_byte(&record_num) + 1);
+			}
 		UART_FLAG_RESET;
-/*		UART_SendChar(addr >> 8);
-		UART_SendChar(addr);
-		for (uint8_t r = 0; r < UART_pointer; r++){
-			UART_SendChar(i2c_read_byte(EEP_ADDR, addr + r));
-		}*/
 		UART_pointer = 0;
 	}
 	if (!(isr_count % 10)){
@@ -579,8 +655,9 @@ ISR(TIMER0_OVF_vect){
 		if (temp_h > time[0])
 			ds3231_read_date(date);
 		alarm_start();
+		PORTB ^= 0x02;
 	}
-	if (!(isr_count % 4) && !(status & 0x18)){
+	if (!(isr_count & 3) && !(status & 0x30)){
 		TCNT1 = 0;
 		switch(OCR1AL){
 			case 0x10:
@@ -595,8 +672,6 @@ ISR(TIMER0_OVF_vect){
 		}
 	}
 	isr_count++;
-	if 	(isr_count == 0xFF)
-		isr_count = 0;
 	DDRD = 0xE0;
 	ok_button();
 	up_button();
@@ -605,7 +680,7 @@ ISR(TIMER0_OVF_vect){
 		delay--;
 	else {
 		if (!menu){
-			shiftout(1, 0xAE);
+			shiftout(COM, 0xAE);
 			DDRD = 0x00;
 			}
 	}
@@ -615,6 +690,7 @@ ISR(TIMER0_OVF_vect){
 ISR(USART_RXC_vect){
 	sleep_disable();
 	uint8_t uartBuf = UDR;
+	//UART_SendChar(uartBuf);
 	switch (UART_cond){
 		case 1:
 			addr |= uartBuf << shift;
@@ -629,28 +705,40 @@ ISR(USART_RXC_vect){
 				UART_FLAG_SET;
 				shift = 8;
 			} else {
-				UART_arr[UART_pointer] = uartBuf;
-				UART_pointer++;
+				if (uartBuf == 0x04){
+					UART_cond = 0;
+					UART_FLAG_FULL_FILE_SET;
+					shift = 8;
+				} else {
+					UART_arr[UART_pointer] = uartBuf;
+					UART_pointer++;
+				}
 			}
+			break;
+		case 4:
+			eeprom_write_byte(&record_num, eeprom_read_byte(&record_num) - 1);
+			UART_cond = 0;
 			break;
 	}
 	switch (uartBuf){
+		case 0x04: UART_cond = 4; break;
 		case 0x02: UART_cond = 2; break;
 		case 0x01: UART_cond = 1; break;
 		//default: UART_cond = 0;
 	}
 }
 ISR(TIMER1_COMPA_vect){
-	sei();
+	cli();
 	TCNT1L = 0;
 	DDRB |= 0x01;
 	PORTB ^= 0x01;
-	cli();
+	DDRB ^= 0x01;
+	sei();
 }
 int main(void){
 	DDRD = 0xE0;
 	PORTD = 0x00;
-	//DDRB = 0x01;
+	DDRB = 0x02;
 	ACSR |= (1 << ACD);
 	i2c_init();
 	ds3231_init();
@@ -660,19 +748,21 @@ int main(void){
 	i2c_send_byte(DS_ADDR, 0x0F, 0x00); //disables 32kHz output
 	ds3231_read_time();
 	ds3231_read_date();
-	display_time();
-	display_date();
+	display_time_date();
 	draw_alarms();
 	TIMSK = 0x11;
 	TCCR0 = 0x04;
 	TCNT0 = 0x00;
-	//TCCR1B = 0x03;
 	TIFR = 0x10;
 	OCR1AL = 0x0B;
-	sei();
+	eeprom_write_byte(&record_num, 2);
+	//record_num++;
 	set_sleep_mode(SLEEP_MODE_IDLE);
 	//ds3231_write_time(22, 8, 40);
 	//ds3231_write_date(1, 8, 17);
+	//u_char rec[] = "Record1 is the best Somebody once told me the world is gonna roll me, I ain't the sharpest tool in the shed. She was looking kind of dumb with her finger and her thumb in a shape of an \"L\" on her forehead. Well, the years start coming and they don't start coming, up to the rules and I hit the ground running. Doesn't make sense not to live for fun, your brain gets smart but your head gets dumb. So much to see, so much to do, so what's wrong not taking the back streets? You'll never know if you don't go, you'll never shine if you don't glow.\0";
+	//eeprom_write_word(&record_cell_len[0], sizeof(rec));
+	//i2c_send_arr(EEP_ADDR, RECORD_START, rec, sizeof(rec));
 	while (1) {
 		sleep_enable();
 		sleep_cpu();

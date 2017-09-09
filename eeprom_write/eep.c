@@ -419,7 +419,7 @@ const uint8_t font8px[] PROGMEM={
 // 0xE0 * 5
 void ascii(){
 	for (uint16_t u = 0; u <= sizeof(font8px); u++){
-		i2c_send_byte(EEP_ADDR, 0x0021 * 5 + u, pgm_read_byte(&font8px[u]));
+		i2c_send_byte(EEP_ADDR, 0x0020 * 5 + u, pgm_read_byte(&font8px[u]));
 		//shiftout(DATA, pgm_read_byte(&font8px[u]));
 		_delay_ms(6);
 	}

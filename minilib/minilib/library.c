@@ -1,137 +1,10 @@
-/*Will be moved to minilib.h*/
-/*50 kHz I2C*/
-#define F_CPU 1000000
-//#include <avr/io.h>
-#include <util/delay.h>
-#include <avr/eeprom.h>
-#include <avr/interrupt.h>
-#include <avr/sleep.h>
-#define u_char unsigned char
-
-#define PRESCALER           0 //F_CPU/(16+2(PRESCALER)*4^0)
-#define TWI_START    0
-#define TWI_RESTART	 1
-#define TWI_STOP            2
-#define TWI_TRANSMIT        3
-#define TWI_RECEIVE_ACK     4
-#define TWI_RECEIVE_NACK    5
-#define EEP_ADDR 0x54 //0b01010100
-#define DS_ADDR  0x68 //0b01101000
-
-/*DS registers*/
-#define DS3231_SECONDS		0x00	// Seconds
-#define DS3231_MINUTES		0x01	// Minutes
-#define DS3231_HOURS		0x02	// Hours
-#define DS3231_DAY		0x03	// Day of week
-#define DS3231_DATE		0x04	// Day
-#define DS3231_MONTH		0x05	// Month
-#define DS3231_YEAR		0x06	// Year
-#define DS3231_CONTROL		0x0E	// Control reg
-#define DS3231_STATUS		0x0F	// Status reg
-#define DS3231_SET_CLOCK	0x10	// Frequency correction
-#define DS3231_T_MSB		0x11	// Hbyte temperature
-#define DS3231_T_LSB		0x12	// Lbyte temperature
-
-/*Display styles*/
-#define DS3231_HOURS_12		0x40
-#define DS3231_24		0x3F
-#define DS3231_AM		0x5F
-#define DS3231_PM		0x60
-#define DS3231_GET_24		0x02
-#define DS3231_GET_PM		0x01
-#define DS3231_GET_AM		0x00
-
-/*Other registers*/
-#define DS3231_DY_DT		0x06
-#define DS3231_EOSC		0x07
-#define DS3231_BBSQW		0x06
-#define DS3231_CONV		0x05
-#define DS3231_INTCN		0x02
-#define DS3231_OSF		0x07
-#define DS3231_EN32KHZ		0x03
-#define DS3231_BSY		0x02
-#define DS3231_A2F		0x01
-#define DS3231_A1F		0x00
-#define DS3231_SIGN		0x07
-
-#define COM 0x01
-#define DATA 0x00
-#define UP 0x01
-#define DOWN 0x02
-#define NOSTEP 0x00
-
-#define MENU_DESC_START 2400
-
-uint8_t ret_arr[196];
-uint8_t res_seq[] EEMEM = {0xAE, 0xD5, 0xF0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x00, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF};
-uint8_t menu_shift[] EEMEM = {0, 5, 6, 11, 7, 6};
-uint8_t font36px_shift[] EEMEM = {0, 22, 34, 57, 79, 105, 126, 147, 170, 192, 213, 219};
-u_char ok[] EEMEM = "OK\0";
-u_char res[] EEMEM = "RES\0";
-u_char on_off[] EEMEM = "ON OFF\0";
-u_char dow[] EEMEM = "Ïí Âò Ñð ×ò Ïò Ñá Âñ\0";
-uint8_t cursor_horiz = 0;
-uint8_t time[3];
-uint8_t date[4];
-u_char date_str[] = "dd/mm/yy\0";
-u_char time_str[] = "hh:mm:ss\0";
-uint8_t date_temp[4];
-uint8_t time_temp[3];
-uint8_t alarm1[3] EEMEM = {12, 0, 4};
-uint8_t alarm2[3] EEMEM = {12, 0, 4};	
-uint8_t alarm1_temp[3] = {12, 0, 4};
-uint8_t alarm2_temp[3] = {12, 0, 4};
-uint8_t alarm_str1[] = "hh:mm\0";
-uint8_t alarm_str2[] = "hh:mm\0";
-uint8_t alarm2_img[] EEMEM = {
-	0x00, 0x1C, //            ###
-	0x87, 0xD2, // #    ##### #  #
-	0xC9, 0x2A, // ##  #  #  # # #
-	0xF0, 0x16, // ####       # ##
-	0x69, 0x28, //  ## #  #  # #
-	0x41, 0x04, //  #     #     #
-	0x41, 0x04, //  #     #     #
-	0x61, 0xF4, //  ##    ##### #
-	0x40, 0x04, //  #           #
-	0xCE, 0x04, // ##  ###      #
-	0xAB, 0x28, // # # # ##  # #
-	0x95, 0x16, // #  # # #   # ##
-	0xAD, 0x2A, // # # ## #  # # #
-	0xB3, 0xD2, // # ##  #### #  #
-	0xEE, 0x1C, // ### ###    ###
-};
-uint8_t alarm1_img[] EEMEM = {
-	0x00, 0x1C, //            ###
-	0x87, 0xD2, // #    ##### #  #
-	0xC9, 0x2A, // ##  #  #  # # #
-	0xF0, 0x16, // ####       # ##
-	0x69, 0x28, //  ## #  #  # #
-	0x41, 0x04, //  #     #     #
-	0x41, 0x04, //  #     #     #
-	0x61, 0xF4, //  ##    ##### #
-	0x40, 0x04, //  #           #
-	0x40, 0x04, //  #           #
-	0xEE, 0x28, // ### ###   # #
-	0xBB, 0x16, // # ### ##   # ##
-	0x81, 0x2A, // #      #  # # #
-	0xBF, 0xD2, // # ######## #  #
-	0xE0, 0x1C, // ###        ###
-};
-uint8_t status = 0; //Status reg:
-/*
-0 bit -> when minutes changed. I'm using that to redraw digits on the main screen. Resets in draw_big_digit function
-1 bit -> alarm 1 set
-2 bit -> alarm 2 set
-3 bit -> UART flag
-4 bit -> alarm 1 stopped
-5 bit -> alarm 2 stopped
-*/
-#define UART_FLAG status & 0x08
-#define UART_FLAG_SET status |= 0x08
-#define UART_FLAG_RESET status &= ~0x08
 void UART_SendChar(u_char sym){
 	UDR = sym;
 	while(!(UCSRA & (1 << UDRE)));
+}
+void UART_SendStr(u_char* str){
+	while(*str)
+		UART_SendChar(*(str++));
 }
 void send_sp(){
 	uint16_t * s = SP;
@@ -185,7 +58,7 @@ void goto_x(uint8_t shift_f, uint8_t shift_s){
 	sei();
 }
 /*Select action*/
-uint8_t i2c_action(uint8_t action){
+static void i2c_action(uint8_t action){
 	switch(action){
 		case TWI_START:
 		case TWI_RESTART:
@@ -194,12 +67,10 @@ uint8_t i2c_action(uint8_t action){
 		case TWI_STOP:
 		TWCR = _BV(TWSTO) | _BV(TWEN) | _BV(TWINT);
 		break;
-		case TWI_TRANSMIT:
-		TWCR = _BV(TWEN) | _BV(TWINT);
-		break;
 		case TWI_RECEIVE_ACK:
 		TWCR = _BV(TWEN) | _BV(TWINT) | _BV(TWEA);
 		break;
+		case TWI_TRANSMIT:
 		case TWI_RECEIVE_NACK:
 		TWCR = _BV(TWEN) | _BV(TWINT);
 		break;
@@ -211,41 +82,15 @@ uint8_t i2c_action(uint8_t action){
 		case 0x20:
 		case 0x38:
 		case 0x48:
-			return 1;
+			status |= 0x40;
+			//UART_SendStr((u_char*)"i2c_fault\n\0");
+		break;
 	}
-	return 0;
 }
 /*Sends byte of data to I2C device*/
-void i2c_search(){
-	shiftout(DATA, 0xFF);
-	for (uint8_t i2c_addr = 0x54; i2c_addr < 128; i2c_addr++){
-		i2c_action(TWI_START);
-		TWDR = i2c_addr << 1; // write
-		shiftout(DATA, i2c_action(TWI_TRANSMIT));
-		i2c_action(TWI_STOP);
-	}
-}
-uint8_t i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
+void i2c_send_byte(uint8_t i2c_addr, uint16_t device_addr, uint8_t data){
 	cli();
-	uint8_t err = 0;
-	err += i2c_action(TWI_START);
-	TWDR = i2c_addr << 1; // write
-	err += i2c_action(TWI_TRANSMIT);
-	if (i2c_addr != DS_ADDR){
-		TWDR = device_addr >> 8;
-		err += i2c_action(TWI_TRANSMIT);
-	}
-	TWDR = device_addr;
-	err += i2c_action(TWI_TRANSMIT);
-	TWDR = data;
-	err += i2c_action(TWI_TRANSMIT);
-	err += i2c_action(TWI_STOP);
-	return err;
-	sei();
-}
-/*Sends block of data to I2C device*/
-uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint8_t len){
-	if (i2c_addr == EEP_ADDR && device_addr < 2400) return 1;
+	//uint8_t err = 0;
 	i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
 	i2c_action(TWI_TRANSMIT);
@@ -255,32 +100,81 @@ uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint
 	}
 	TWDR = device_addr;
 	i2c_action(TWI_TRANSMIT);
-	for (uint8_t i = 0; i < len; i++){
-		TWDR = *(data + i);
-		i2c_action(TWI_TRANSMIT);
-	}
+	TWDR = data;
+	i2c_action(TWI_TRANSMIT);
 	i2c_action(TWI_STOP);
-	return 0;
+	//return err;
+	sei();
+}
+/*Sends block of data to I2C device*/
+void i2c_send_block(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint8_t len){
+	cli();
+	//if ((i2c_addr == EEP_ADDR) && (device_addr < 2400)){
+		//there might be your exception
+	//	} else {
+		i2c_action(TWI_START);
+		TWDR = i2c_addr << 1; // write
+		i2c_action(TWI_TRANSMIT);
+		if (i2c_addr != DS_ADDR){
+			TWDR = device_addr >> 8;
+			i2c_action(TWI_TRANSMIT);
+		}
+		TWDR = device_addr;
+		i2c_action(TWI_TRANSMIT);
+		for (uint8_t i = 0; i < len; i++){
+			TWDR = *(data + i);
+			i2c_action(TWI_TRANSMIT);
+		}
+		i2c_action(TWI_STOP);
+//	}
+	sei();
+}
+uint8_t i2c_send_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t *data, uint16_t len){
+	if (device_addr % 32){
+		uint8_t shift = 32 - (device_addr % 32);
+		if (len < shift){
+			i2c_send_block(i2c_addr, device_addr, data, len);
+			return 0;
+		} else {
+			i2c_send_block(i2c_addr, device_addr, data, shift);
+			len -= shift;
+			device_addr += shift;
+			data += shift;
+			_delay_ms(6);
+		}
+	}
+	for (uint8_t i = 0; i < len >> 5; i++){
+		i2c_send_block(i2c_addr, device_addr, data, 32);
+		device_addr += 32;
+		data += 32;
+		_delay_ms(6);
+	}
+	if (len % 32){
+		i2c_send_block(i2c_addr, device_addr, data, len % 32);
+		_delay_ms(6);
+		return 0;
+	}
+	return 1;
 }
 /*Reads byte of data from I2C device*/
 uint8_t i2c_read_byte(uint8_t i2c_addr, uint16_t device_addr){
 	uint8_t data = 0;
-	uint8_t err = 0;
-	err += i2c_action(TWI_START);
+	//uint8_t err = 0;
+	i2c_action(TWI_START);
 	TWDR = i2c_addr << 1; // write
-	err += i2c_action(TWI_TRANSMIT);
+	i2c_action(TWI_TRANSMIT);
 	if (i2c_addr != DS_ADDR){
 		TWDR = device_addr >> 8;
-		err += i2c_action(TWI_TRANSMIT);
+		i2c_action(TWI_TRANSMIT);
 	}
 	TWDR = device_addr;
-	err += i2c_action(TWI_TRANSMIT);
-	err += i2c_action(TWI_RESTART);
+	i2c_action(TWI_TRANSMIT);
+	i2c_action(TWI_RESTART);
 	TWDR = i2c_addr << 1 | 0x01; // read
-	err += i2c_action(TWI_RECEIVE_ACK);
-	err += i2c_action(TWI_RECEIVE_NACK);
+	i2c_action(TWI_RECEIVE_ACK);
+	i2c_action(TWI_RECEIVE_NACK);
 	data = TWDR;
-	err += i2c_action(TWI_STOP);
+	i2c_action(TWI_STOP);
 	return data;
 }
 /*Reads block of data from I2C device*/
@@ -306,13 +200,34 @@ void i2c_read_arr(uint8_t i2c_addr, uint16_t device_addr, uint8_t len){
 	i2c_action(TWI_STOP);
 }
 void ds3231_init(void){
-	uint8_t temp = 0;
-	temp = i2c_read_byte(DS_ADDR, (0x1000 | DS3231_CONTROL)); //magic trick!
+	uint8_t temp = i2c_read_byte(DS_ADDR, (0x1000 | DS3231_CONTROL)); //magic trick!
 	i2c_send_byte(DS_ADDR, (0x1000 | DS3231_CONTROL), temp & 0x7F);
 }
 /*Because of tricky data format in RTC*/
 uint8_t ds3231_byte(uint8_t data){
 	return ((data / 10 << 4) | data % 10);
+}
+void comp_date(){
+	for(uint8_t i = 0; i < 4; i++){
+		date_temp[i] = date[i];
+	}
+}
+void tempDate_str(){
+	for (uint8_t i = 0; i < 3; i++){
+		date_str[i * 3] = date_temp[1 + i] / 10 + '0';
+		date_str[i * 3 + 1] = date_temp[1 + i] % 10 + '0';
+	}
+}
+void tempTime_str(){
+	for (uint8_t i = 0; i < 3; i++){
+		time_str[i * 3] = time_temp[i] / 10 + '0';
+		time_str[i * 3 + 1] = time_temp[i] % 10 + '0';
+	}
+}
+void comp_time(){
+	for(uint8_t i = 0; i < 3; i++){
+		time_temp[i] = time[i];
+	}
 }
 void ds3231_read_time(){	
 	i2c_read_arr(DS_ADDR, DS3231_SECONDS, 3);
@@ -320,22 +235,9 @@ void ds3231_read_time(){
 	*(time + 1) = ((ret_arr[1] & 0x70) >> 4) * 10 + (ret_arr[1] & 0x0F);
 	*time = ((ret_arr[2] & 0x30) >> 4) * 10 + (ret_arr[2] & 0x0F);
 }
-void update_time_str(){
-	for (uint8_t i = 0; i < 3; i++){
-		time_str[i * 3] = time[i] / 10 + '0';
-		time_str[i * 3 + 1] = time[i] % 10 + '0';
-	}
-}
 void ds3231_write_time(uint8_t hours, uint8_t minutes, uint8_t seconds){
 	uint8_t temparr[] = {ds3231_byte(seconds), ds3231_byte(minutes), ds3231_byte(hours)};
 	i2c_send_arr(DS_ADDR, DS3231_SECONDS, temparr, 3);
-}
-void update_date_str(){
-	for (uint8_t i = 0; i < 3; i++){
-		date_str[i * 3] = date[1 + i] / 10 + '0';
-		date_str[i * 3 + 1] = date[1 + i] % 10 + '0';
-	}
-	//date_str[8] = '\0';
 }
 void ds3231_read_date(){
 	i2c_read_arr(DS_ADDR, (0x1000 | DS3231_DAY), 4);
@@ -343,18 +245,19 @@ void ds3231_read_date(){
 	date[1] = (ret_arr[1] & 0x0F) + (ret_arr[1] >> 4) * 10;
 	date[2] = ((ret_arr[2] & 0x10) >> 4) * 10 + (ret_arr[2] & 0x0F);
 	date[3] = (ret_arr[3] >> 4) * 10 + (ret_arr[3] & 0x0F);
-	update_date_str();
+	comp_date();
+	tempDate_str();
 }
-void ds3231_write_date(uint8_t day, uint8_t month, uint8_t year){
-	uint8_t a = (14 - date[2]) / 12;
-	uint16_t y = 2000 + date[3] - a;
-	uint8_t m = date[2] + 12 * a - 2;
-	date[0] = (date[1] + y + y / 4 - y / 100 + y / 400 + 31 * m / 12) % 7;
-	if (date[0])
-		date[0]--;
+void ds3231_write_date(){
+	uint8_t a = (14 - date_temp[2]) / 12;
+	uint16_t y = 2000 + date_temp[3] - a;
+	uint8_t m = date_temp[2] + 12 * a - 2;
+	date_temp[0] = (date_temp[1] + y + y / 4 - y / 100 + y / 400 + 31 * m / 12) % 7; //day of the week? omg
+	if (date_temp[0])
+		date_temp[0]--;
 	else
-		date[0] = 6;
-	uint8_t temparr[] = {ds3231_byte(date[0]), ds3231_byte(day), ds3231_byte(month), ds3231_byte(year)};
+		date_temp[0] = 6;
+	uint8_t temparr[] = {ds3231_byte(date_temp[0]), ds3231_byte(date_temp[1]), ds3231_byte(date_temp[2]), ds3231_byte(date_temp[3])};
 	i2c_send_arr(DS_ADDR, DS3231_DAY, temparr, 4);
 }
 /*Display reset*/
@@ -386,53 +289,53 @@ void eep_str_write(uint8_t* inp, uint8_t len){
 /*Puts a string to lcd with small amount of parameters*/
 uint8_t strlen_q(u_char *inp){
 	uint8_t len = 0;
-	while(*(inp + len)){
-		len++;
-	}
+	while(*(inp + len++));
 	return len;
 }
 /*3 param: 
 	page: byte end address|byte start address
 	x-cord: byte start address|byte end address
-	control: 0 for no word shift control, 1 for proper shift
 	*/
+#define PAGE_START *param
+#define PAGE_END *(param + 1)
+#define X_START *(param + 2)
+#define X_END *(param + 3)
 uint8_t word_out(uint8_t *param, u_char *input){
 	uint8_t symbols = 0;
 	uint8_t width = 0;
 	uint8_t len = strlen_q(input);
-	uint8_t curr_page = *param;
-	goto_page(*(param), *(param + 1));
-	goto_x(*(param + 2), *(param + 3));
+	uint8_t curr_page = PAGE_START;
+	goto_page(PAGE_START, PAGE_END);
+	goto_x(X_START, X_END);
 	for (uint8_t w = 0; input[w]; w++){
 		uint8_t q;
-		if (len * 6 > (*(param + 3) - *(param + 2)) * (*(param + 1) - *(param) + 1))
-			break;
-		if (input[w] == ' ')
+		if (input[w] == ' '){
 			for (q = w + 1; q <= len + 1; q++){
-					if (input[q] == ' ' || !input[q]){
-						if ((uint16_t)(q - w) * 6 > *(param + 3) - *(param + 2) - width * 6){
-							if (curr_page == 7){
-								break;
-							} else {
-								width = 0;
-								curr_page++;
-								w++;
-								goto_page(curr_page, curr_page);
-								goto_x(*(param + 2), *(param + 3));
-							}
+				if (input[q] == ' ' || !input[q]){
+					if ((uint16_t)(q - w) * 6 > X_END - X_START - width * 6){
+						symbols++;
+						if (curr_page == 7){
+							return symbols;
+						} else {
+							width = 0;
+							curr_page++;
+							w++;
+							goto_page(curr_page, curr_page);
+							goto_x(X_START, X_END);
 						}
-						break;
 					}
+					break;
 				}
-		else {
-			if (6 > *(param + 3) - *(param + 2) - width * 6){
+			}
+		} else {
+			if (6 > X_END - X_START - width * 6){
 				if (curr_page == 7){
 					break;
-					} else {
+				} else {
 					width = 0;
 					curr_page++;
 					goto_page(curr_page, curr_page);
-					goto_x(*(param + 2), *(param + 3));
+					goto_x(X_START, X_END);
 				}
 			}
 		}
@@ -440,6 +343,7 @@ uint8_t word_out(uint8_t *param, u_char *input){
 		for (uint8_t r = 0; r < 5; r++){
 			shiftout(DATA, ret_arr[r]);
 		}
+		//_delay_ms(100);
 		symbols++;
 		width++;
 		shiftout(DATA, 0x00);
@@ -451,41 +355,38 @@ static void fill_column(uint8_t x_coord, uint8_t page_st, uint8_t page_end, uint
 	goto_page(page_st, page_end);
 	for (uint8_t i = 0; i <= width * 6; i++) shiftout(DATA, type);
 }
+static void al_dr(uint8_t *alrm){
+	for (uint8_t i = 0; i < 30; i++){
+			if (i < 15){
+				shiftout(DATA, eeprom_read_byte(alrm + i * 2 + 1));
+				} else {
+				shiftout(DATA, eeprom_read_byte(alrm + i * 2 - 30));
+			}
+		}
+}
 void draw_alarms(){
 	if (eeprom_read_byte(alarm1 + 2) & 0x80){
 		goto_page(6, 7);
 		goto_x(0, 14);
-		for (uint8_t i = 0; i < 30; i++){
-			if (i < 15){
-				shiftout(DATA, eeprom_read_byte(alarm1_img + i * 2 + 1));
-				} else {
-				shiftout(DATA, eeprom_read_byte(alarm1_img + (i - 15) * 2));
-			}
-		}
+		al_dr(alarm1_img);
 	}
 	if (eeprom_read_byte(alarm2 + 2) & 0x80){
 		goto_page(6, 7);
 		goto_x(16, 30);
-		for (uint8_t i = 0; i < 30; i++){
-			if (i < 15){
-				shiftout(DATA, eeprom_read_byte(alarm2_img + i * 2 + 1));
-				} else {
-				shiftout(DATA, eeprom_read_byte(alarm2_img + (i - 15) * 2));
-			}
-		}
+		al_dr(alarm2_img);
 	}
 }
-static void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
-	uint8_t space = 0;
+static void draw_big_digit(uint8_t num, uint8_t x_coord){
+	//uint8_t space = 0;
 	if (num < 10){
 		if (num == 1){
-			if (status & 0x01) fill_column(x_coord, 1, 6, 6, 0);
+			//if (status & 0x01) fill_column(x_coord, 1, 6, 6, 0);
 			x_coord += 7;
-			space = 6;
+			//space = 6;
 		} else {
-			if (status & 0x01) fill_column(x_coord, 1, 6, 2, 0);
+			//if (status & 0x01) fill_column(x_coord, 1, 6, 2, 0);
 			x_coord += 3;
-			space = 2;
+			//space = 2;
 		}
 	}	
 	uint16_t shift = eeprom_read_byte(&font36px_shift[num]);
@@ -493,60 +394,40 @@ static void draw_big_digit(uint8_t num, uint8_t page, uint8_t x_coord){
 	shift *= 5;
 	i2c_read_arr(EEP_ADDR, 0x0500 + shift, digit_len * 5);
 	for (uint8_t p = 0; p < 5; p++){
-		goto_page(page + p, page + p);
+		goto_page(/*page + */p, /*page + */p);
 		goto_x(x_coord, 127);
 		for (uint8_t pos = 1; pos <= digit_len; pos++){
 			shiftout(DATA,  ret_arr[5 * pos - 1 - p]);
 		}
 	}
-	if (num != 10 && status & 0x01) fill_column(x_coord + digit_len, 1, 6, 26 - space - digit_len, 0);
+	//if (num != 10 && status & 0x01) fill_column(x_coord + digit_len, 1, 6, 26 - space - digit_len, 0);
 	
 }
-void comp_date(){
-	for(uint8_t i = 0; i < 4; i++){
-		date_temp[i] = date[i];
-	}
-}
-void tempDate_str(){
-	for (uint8_t i = 0; i < 3; i++){
-		date_str[i * 3] = date_temp[1 + i] / 10 + '0';
-		date_str[i * 3 + 1] = date_temp[1 + i] % 10 + '0';
-	}
-}
-void tempTime_str(){
-	for (uint8_t i = 0; i < 3; i++){
-		time_str[i * 3] = time_temp[i] / 10 + '0';
-		time_str[i * 3 + 1] = time_temp[i] % 10 + '0';
-	}
-}
-void comp_time(){
-	for(uint8_t i = 0; i < 3; i++){
-		time_temp[i] = time[i];
+
+void alarmTemp_str(){
+	for (uint8_t i = 0; i < 2; i++){
+		alarm_str1[i * 3] = alarm1_temp[i] / 10 + '0';
+		alarm_str1[i * 3 + 1] =  alarm1_temp[i] % 10 + '0';
+		alarm_str2[i * 3] =  alarm2_temp[i] / 10 + '0';
+		alarm_str2[i * 3 + 1] =  alarm2_temp[i] % 10 + '0';
 	}
 }
 void upd_alarm_str(uint8_t num){
 	for (uint8_t i = 0; i < 2; i++){
 		if (num & 1){
-			alarm_str1[i * 3] = eeprom_read_byte(alarm1 + i) / 10 + '0';
-			alarm_str1[i * 3 + 1] =  eeprom_read_byte(alarm1 + i) % 10 + '0';
+			//alarm_str1[i * 3] = eeprom_read_byte(alarm1 + i) / 10 + '0';
+			//alarm_str1[i * 3 + 1] =  eeprom_read_byte(alarm1 + i) % 10 + '0';
 			alarm1_temp[i] = eeprom_read_byte(alarm1 + i);
 		}
 		if (num & 2){
-			alarm_str2[i * 3] =  eeprom_read_byte(alarm2 + i) / 10 + '0';
-			alarm_str2[i * 3 + 1] =  eeprom_read_byte(alarm2 + i) % 10 + '0';
+			//alarm_str2[i * 3] =  eeprom_read_byte(alarm2 + i) / 10 + '0';
+			//alarm_str2[i * 3 + 1] =  eeprom_read_byte(alarm2 + i) % 10 + '0';
 			alarm2_temp[i] = eeprom_read_byte(alarm2 + i);
 		}
 	}
 	alarm1_temp[2] = eeprom_read_byte(alarm1 + 2);
 	alarm2_temp[2] = eeprom_read_byte(alarm2 + 2);
-}
-void alarmTemp_str(){
-	for (uint8_t i = 0; i < 2; i++){
-			alarm_str1[i * 3] = alarm1_temp[i] / 10 + '0';
-			alarm_str1[i * 3 + 1] =  alarm1_temp[i] % 10 + '0';
-			alarm_str2[i * 3] =  alarm2_temp[i] / 10 + '0';
-			alarm_str2[i * 3 + 1] =  alarm2_temp[i] % 10 + '0';
-	}
+	alarmTemp_str();
 }
 void alarm_set_reset(uint8_t num, uint8_t sres){
 	if (num == 1){
@@ -564,17 +445,15 @@ void alarm_set_reset(uint8_t num, uint8_t sres){
 	}
 }
 /*Displays time*/
-void display_time(){
-	draw_big_digit(time[0] / 10, 0, 6);
-	draw_big_digit(time[0] % 10, 0, 34);
-	draw_big_digit(10, 0, 65);
-	draw_big_digit(time[1] / 10, 0, 70);
-	draw_big_digit(time[1] % 10, 0, 98);
-	status &= ~0x01;
-}
-void display_date(){
-	uint8_t param[] = {7, 7, 127 - 8 * 6, 127, 0, 0};
+void display_time_date(){
+	draw_big_digit(time[0] / 10, 6);
+	draw_big_digit(time[0] % 10, 34);
+	draw_big_digit(10, 63);
+	draw_big_digit(time[1] / 10, 70);
+	draw_big_digit(time[1] % 10, 98);
+	uint8_t param[] = {7, 7, 127 - 8 * 6, 127};
 	word_out(param, date_str);
+	status &= ~0x01;
 }
 /*Rules the cursor in menu mode. 0 for just reset, 1 for up, 2 for down.*/
 void cursor_h(uint8_t upd){
@@ -594,35 +473,42 @@ void cursor_h(uint8_t upd){
 			break;
 	}
 	uint8_t param[] = {cursor_horiz, cursor_horiz, 0, 10, 1};
-	word_out(param,(u_char*)  ">\0");	
+	word_out(param,(u_char*)">\0");	
 	if(upd){
 		param[0] = rem_pos;
 		param[1] = rem_pos;
-		word_out(param, (u_char*) " \0");
+		word_out(param, (u_char*)" \0");
 	}
 }
-uint8_t cursor_v_pos = 0;
 void check_day_correct(){
-		if ((date_temp[2] % 2 && date_temp[2] < 8) || (!(date_temp[2] % 2) && date_temp[2] > 7)){
-			if (date_temp[1] > 31) date_temp[1] = 1;
-			if (!date_temp[1]) date_temp[1] = 31;
+	uint8_t max_day = 31;
+	if (((date_temp[2] & 1) && date_temp[2] < 8) || (!(date_temp[2] & 1) && date_temp[2] > 8)){
+		if (date_temp[2] == 2){
+			max_day = 28;
+			if (date_temp[2] % 4)
+				max_day = 29;
+		}
+	} else
+		max_day = 30;
+		/*if (((date_temp[2] & 1) && date_temp[2] < 8) || (!(date_temp[2] % 2) && date_temp[2] > 7)){
+			max_day = 31;
 		} else {
 			if (date_temp[2] == 2){
 				//if ((((date_temp[3] + 2000) % 100) && !((date_temp[3] + 2000) % 4)) || !((date_temp[3] + 2000) % 400)){
-				/*Truly check for year
-				lite version - till year 2099*/
-				if (!(date_temp[3] % 4)){
-					if (date_temp[1] > 29) date_temp[1] = 1;
-					if (!date_temp[1]) date_temp[1] = 29;
-				} else {
-					if (date_temp[1] > 28) date_temp[1] = 1;
-					if (!date_temp[1]) date_temp[1] = 28;
-				}
+				//Truly check for year
+				//lite version - till year 2099
+				if (!(date_temp[3] % 4))
+					max_day = 29;
+				else
+					max_day = 28;
 			} else {
-				if (date_temp[1] > 30) date_temp[1] = 1;
-				if (!date_temp[1]) date_temp[1] = 30;
+				max_day = 30;
 			}
-		}
+		}*/
+	if (date_temp[1] > max_day)
+		date_temp[1] = 1;
+	else
+		if (!date_temp[1]) date_temp[1] = max_day;
 }
 static void draw_cursor(uint8_t cursor_pos_t, uint8_t** lines, uint8_t* line_lengths, uint8_t page_st, uint8_t fill){
 	uint8_t i = 0;
